@@ -364,11 +364,12 @@ func (c contractShapeClient) Query(ctx context.Context, query url.Values) (contr
 
 func TestContractHarnessSeparatesPathQueryAndBody(t *testing.T) {
 	var requests []struct {
-		method   string
-		path     string
-		query    url.Values
-		rawQuery string
-		body     []byte
+		method      string
+		path        string
+		query       url.Values
+		rawQuery    string
+		contentType string
+		body        []byte
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		body, err := io.ReadAll(r.Body)
@@ -376,12 +377,13 @@ func TestContractHarnessSeparatesPathQueryAndBody(t *testing.T) {
 			t.Error(err)
 		}
 		requests = append(requests, struct {
-			method   string
-			path     string
-			query    url.Values
-			rawQuery string
-			body     []byte
-		}{method: r.Method, path: r.URL.EscapedPath(), query: r.URL.Query(), rawQuery: r.URL.RawQuery, body: body})
+			method      string
+			path        string
+			query       url.Values
+			rawQuery    string
+			contentType string
+			body        []byte
+		}{method: r.Method, path: r.URL.EscapedPath(), query: r.URL.Query(), rawQuery: r.URL.RawQuery, contentType: r.Header.Get("Content-Type"), body: body})
 
 		switch r.URL.EscapedPath() {
 		case APIPrefix + "/shape/demo%2Fblue":
@@ -454,9 +456,15 @@ func TestContractHarnessSeparatesPathQueryAndBody(t *testing.T) {
 	if len(requests[0].body) != 0 || len(requests[2].body) != 0 || len(requests[3].body) != 0 {
 		t.Fatalf("path-only/query bodies = %q, %q, and %q, want empty", requests[0].body, requests[2].body, requests[3].body)
 	}
+	if requests[0].contentType != "" || requests[2].contentType != "" || requests[3].contentType != "" {
+		t.Fatalf("path-only/query content types = %q, %q, and %q, want empty", requests[0].contentType, requests[2].contentType, requests[3].contentType)
+	}
 	wantBody := `{"name":"new"}`
 	if string(requests[1].body) != wantBody {
 		t.Fatalf("path-plus-body body = %s, want %s", requests[1].body, wantBody)
+	}
+	if requests[1].contentType != "application/json" {
+		t.Fatalf("path-plus-body content type = %q, want application/json", requests[1].contentType)
 	}
 	if !reflect.DeepEqual(requests[2].query, query) {
 		t.Fatalf("query = %v, want %v", requests[2].query, query)
