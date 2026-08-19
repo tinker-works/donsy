@@ -196,10 +196,16 @@ func (value *Run) Start(at time.Time) error {
 	if value == nil {
 		return errors.New("agent run is nil")
 	}
-	if err := value.Transition(StatusRunning); err != nil {
+
+	started := *value
+	started.StartedAt = at
+	if err := started.Transition(StatusRunning); err != nil {
 		return err
 	}
-	value.StartedAt = at
+	if err := started.Validate(); err != nil {
+		return err
+	}
+	*value = started
 	return nil
 }
 

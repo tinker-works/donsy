@@ -67,6 +67,19 @@ func TestRunFailRejectsFinishBeforeStart(t *testing.T) {
 	}
 }
 
+func TestRunStartRejectsRestoredFinishBeforeStart(t *testing.T) {
+	value := NewRun("agent", "project", "issue")
+	value.FinishedAt = time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
+	want := value
+
+	if err := value.Start(value.FinishedAt.Add(time.Minute)); err == nil {
+		t.Fatal("Start() accepted a finish time before the start")
+	}
+	if value != want {
+		t.Fatalf("Start() mutated the run on error: got %#v, want %#v", value, want)
+	}
+}
+
 func TestRunTransitionRejectsGeneratedFinishBeforeStart(t *testing.T) {
 	value := NewRun("agent", "project", "issue")
 	started := time.Date(2099, time.August, 19, 0, 0, 0, 0, time.UTC)
