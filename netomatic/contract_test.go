@@ -205,22 +205,9 @@ var contractDTOs = map[string]any{
 	"TransitionEpicResponse": contractObjectFixture(TransitionEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
 	"CloseEpicRequest":       CloseEpicRequest{Project: "demo", Epic: "epic-1"},
 	"CloseEpicResponse":      contractObjectFixture(CloseEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"ListIssuesRequest":      ListIssuesRequest{Project: "demo", Epic: "epic-1"},
-	"ListIssuesResponse":     contractListFixture(ListIssuesResponse{Issues: []Issue{contractIssue}}, "issues", issueFixtureJSON),
-	"GetIssueRequest":        GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"GetIssueResponse":       contractObjectFixture(GetIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"CreateIssueRequest": CreateIssueRequest{
-		Project: "demo", Epic: "epic-1", Title: "First issue", Description: "Implement it",
+		ParentID: "parent-1", Title: "First issue", Body: "Implement it", Repository: "origin",
 	},
-	"CreateIssueResponse": contractObjectFixture(CreateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"UpdateIssueRequest": UpdateIssueRequest{
-		Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Updated issue", Description: "Updated details",
-	},
-	"UpdateIssueResponse":      contractObjectFixture(UpdateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"TransitionIssueRequest":   TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
-	"TransitionIssueResponse":  contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"CloseIssueRequest":        CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"CloseIssueResponse":       contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"ListPullRequestsRequest":  ListPullRequestsRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
 	"ListPullRequestsResponse": contractListFixture(ListPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
 	"CreatePullRequestRequest": CreatePullRequestRequest{
@@ -313,10 +300,6 @@ var contractDTOs = map[string]any{
 	"RunEpicResponse": RunEpicResponse{Run: AgentRun{
 		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
 	}},
-	"RunIssueRequest": RunIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
-	}},
 	"OpenPullRequestsRequest":       OpenPullRequestsRequest{Project: "demo"},
 	"OpenPullRequestsResponse":      contractListFixture(OpenPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
 	"TransitionPullRequestRequest":  TransitionPullRequestRequest{Project: "demo", PullRequest: "pr-1", Status: "approved"},
@@ -333,7 +316,10 @@ var contractDTOs = map[string]any{
 }
 
 var contractPathDTOs = map[string]any{
-	"ShapePath": contractPathFixture{Project: "demo/blue"},
+	"ShapePath":         contractPathFixture{Project: "demo/blue"},
+	"CreateIssuePath":   CreateIssuePath{ProjectID: 42, EpicID: "epic-1"},
+	"CloseIssuePath":    CloseIssuePath{ProjectID: 42, EpicID: "epic-1", IssueID: "issue-1"},
+	"RunIssueAgentPath": RunIssueAgentPath{ProjectID: 42, EpicID: "epic-1", IssueID: "issue-1"},
 }
 
 var contractQueryDTOs = map[string]url.Values{

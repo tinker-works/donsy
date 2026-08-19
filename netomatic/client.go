@@ -229,46 +229,14 @@ func (c *HTTPClient) CloseEpic(ctx context.Context, request CloseEpicRequest) (C
 	return response, err
 }
 
-func (c *HTTPClient) ListIssues(ctx context.Context, request ListIssuesRequest) (ListIssuesResponse, error) {
-	var response ListIssuesResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) CreateIssue(ctx context.Context, path CreateIssuePath, request CreateIssueRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/issues"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) GetIssue(ctx context.Context, request GetIssueRequest) (GetIssueResponse, error) {
-	var response GetIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) CreateIssue(ctx context.Context, request CreateIssueRequest) (CreateIssueResponse, error) {
-	var response CreateIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) UpdateIssue(ctx context.Context, request UpdateIssueRequest) (UpdateIssueResponse, error) {
-	var response UpdateIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue)
-	err := c.do(ctx, MethodPut, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) TransitionIssue(ctx context.Context, request TransitionIssueRequest) (TransitionIssueResponse, error) {
-	var response TransitionIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue) + "/transition"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) CloseIssue(ctx context.Context, request CloseIssueRequest) (CloseIssueResponse, error) {
-	var response CloseIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue) + "/close"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) CloseIssue(ctx context.Context, path CloseIssuePath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/issues/" + escapePathSegment(path.IssueID)
+	return c.do(ctx, MethodDelete, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
 func (c *HTTPClient) ListPullRequests(ctx context.Context, request ListPullRequestsRequest) (ListPullRequestsResponse, error) {
@@ -431,10 +399,9 @@ func (c *HTTPClient) RunEpic(ctx context.Context, request RunEpicRequest) (RunEp
 	return response, err
 }
 
-func (c *HTTPClient) RunIssue(ctx context.Context, request RunIssueRequest) (RunIssueResponse, error) {
-	var response RunIssueResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/runs/issue", true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) RunIssueAgent(ctx context.Context, path RunIssueAgentPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/issues/" + escapePathSegment(path.IssueID) + "/agent-runs"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
 func (c *HTTPClient) OpenPullRequests(ctx context.Context, request OpenPullRequestsRequest) (OpenPullRequestsResponse, error) {

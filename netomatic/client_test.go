@@ -56,9 +56,12 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			query := contractTestQuery(operation)
 			request := contractTestRequest(operation)
 			response := contractFixtureValue(contractDTOs[operation.Response])
-			responseBody, err = contractFixtureJSON(contractDTOs[operation.Response])
-			if err != nil {
-				t.Fatal(err)
+			responseBody = nil
+			if operation.Response != "" {
+				responseBody, err = contractFixtureJSON(contractDTOs[operation.Response])
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			requestBody = nil
 			requestMethod = ""
@@ -112,6 +115,95 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 				t.Errorf("request body = %s, want %s", requestBody, wantBody)
 			}
 		})
+	}
+}
+
+func TestHTTPClientCreateIssueUsesGoMergeBody(t *testing.T) {
+	var bodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want %q", r.Method, http.MethodPost)
+		}
+		if r.URL.EscapedPath() != APIPrefix+"/projects/42/epics/epic-1/issues" {
+			t.Errorf("path = %q, want issue creation route", r.URL.EscapedPath())
+		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		bodies = append(bodies, string(body))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := CreateIssuePath{ProjectID: 42, EpicID: "epic-1"}
+	if err := client.CreateIssue(context.Background(), path, CreateIssueRequest{
+		ParentID: "parent-1", Title: "Child issue", Body: "Implement it", Repository: "origin",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := client.CreateIssue(context.Background(), path, CreateIssueRequest{
+		Title: "Root issue", Body: "", Repository: "origin",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	want := []string{
+		`{"parentId":"parent-1","title":"Child issue","body":"Implement it","repository":"origin"}`,
+		`{"title":"Root issue","body":"","repository":"origin"}`,
+	}
+	if !reflect.DeepEqual(bodies, want) {
+		t.Fatalf("request bodies = %v, want %v", bodies, want)
+	}
+}
+
+func TestHTTPClientRunIssueAgentReturnsUnavailable(t *testing.T) {
+	const detail = "manual issue agent execution is not configured for this process"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want %q", r.Method, http.MethodPost)
+		}
+		if r.URL.EscapedPath() != APIPrefix+"/projects/42/epics/epic-1/issues/issue-1/agent-runs" {
+			t.Errorf("path = %q, want issue-agent route", r.URL.EscapedPath())
+		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Errorf("read request body: %v", err)
+		}
+		if len(body) != 0 {
+			t.Errorf("request body = %q, want empty", body)
+		}
+		w.WriteHeader(http.StatusNotImplemented)
+		_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"`+detail+`"}`)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.RunIssueAgent(context.Background(), RunIssueAgentPath{
+		ProjectID: 42, EpicID: "epic-1", IssueID: "issue-1",
+	})
+	var apiError *APIError
+	if !errors.As(err, &apiError) {
+		t.Fatalf("error = %v, want APIError", err)
+	}
+	if apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != detail {
+		t.Fatalf("API error = %#v", apiError)
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("error = %v, want ErrUnavailable", err)
 	}
 }
 
@@ -191,9 +283,21 @@ func contractTestRoute(operation Operation, request any) string {
 		"name":          "Name",
 	} {
 		field := value.FieldByName(fieldName)
-		if field.IsValid() && field.Kind() == reflect.String {
-			route = strings.Replace(route, "{"+placeholder+"}", url.PathEscape(field.String()), 1)
+		if !field.IsValid() {
+			continue
 		}
+		var segment string
+		switch field.Kind() {
+		case reflect.String:
+			segment = url.PathEscape(field.String())
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			segment = strconv.FormatUint(field.Uint(), 10)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			segment = strconv.FormatInt(field.Int(), 10)
+		default:
+			continue
+		}
+		route = strings.Replace(route, "{"+placeholder+"}", segment, 1)
 	}
 	return route
 }
@@ -224,12 +328,11 @@ func contractTestRequest(operation Operation) any {
 
 func TestHTTPClientEscapesPathSegments(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		want := APIPrefix + "/projects/demo%2Fblue/epics/epic%20one/issues/issue%3F1"
+		want := APIPrefix + "/projects/7/epics/epic%20one/issues/issue%3F1"
 		if r.URL.EscapedPath() != want {
 			t.Errorf("escaped path = %q, want %q", r.URL.EscapedPath(), want)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"issue":{"id":"issue-1","title":"title","status":"open"}}`)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer server.Close()
 
@@ -237,10 +340,10 @@ func TestHTTPClientEscapesPathSegments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.GetIssue(context.Background(), GetIssueRequest{
-		Project: "demo/blue",
-		Epic:    "epic one",
-		Issue:   "issue?1",
+	err = client.CloseIssue(context.Background(), CloseIssuePath{
+		ProjectID: 7,
+		EpicID:    "epic one",
+		IssueID:   "issue?1",
 	})
 	if err != nil {
 		t.Fatal(err)
