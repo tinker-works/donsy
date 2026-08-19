@@ -204,6 +204,9 @@ func (value *Run) Start(at time.Time) error {
 	if value == nil {
 		return errors.New("agent run is nil")
 	}
+	if err := value.Validate(); err != nil {
+		return err
+	}
 
 	started := *value
 	started.StartedAt = at
@@ -220,6 +223,9 @@ func (value *Run) Start(at time.Time) error {
 func (value *Run) Complete(at time.Time) error {
 	if value == nil {
 		return errors.New("agent run is nil")
+	}
+	if err := value.Validate(); err != nil {
+		return err
 	}
 	if err := value.validateFinishedAt(at); err != nil {
 		return err
@@ -239,6 +245,9 @@ func (value *Run) Complete(at time.Time) error {
 func (value *Run) Fail(message string, at time.Time) error {
 	if value == nil {
 		return errors.New("agent run is nil")
+	}
+	if err := value.Validate(); err != nil {
+		return err
 	}
 	if strings.TrimSpace(message) == "" {
 		return errors.New("agent run error cannot be empty")

@@ -111,6 +111,9 @@ func (value *PullRequest) Reset() error {
 	if value == nil {
 		return errors.New("pull request is nil")
 	}
+	if err := value.Validate(); err != nil {
+		return err
+	}
 	if value.Status == StatusMerged {
 		return errors.New("merged pull request cannot be reset")
 	}

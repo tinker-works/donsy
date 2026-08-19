@@ -149,6 +149,50 @@ func TestRunTransitionRejectsRestoredFinishBeforeStart(t *testing.T) {
 	}
 }
 
+func TestRunTimestampTransitionsRejectInvalidRestoredChronology(t *testing.T) {
+	started := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		transition func(*Run) error
+	}{
+		{
+			name: "start",
+			transition: func(value *Run) error {
+				return value.Start(started.Add(-2 * time.Minute))
+			},
+		},
+		{
+			name: "complete",
+			transition: func(value *Run) error {
+				return value.Complete(started.Add(time.Minute))
+			},
+		},
+		{
+			name: "fail",
+			transition: func(value *Run) error {
+				return value.Fail("failed", started.Add(time.Minute))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := NewRun("agent", "project", "issue")
+			value.Status = StatusRunning
+			value.StartedAt = started
+			value.FinishedAt = started.Add(-time.Minute)
+			want := value
+
+			if err := test.transition(&value); err == nil {
+				t.Fatal("transition accepted an invalid restored run")
+			}
+			if value != want {
+				t.Fatalf("transition mutated the run on error: got %#v, want %#v", value, want)
+			}
+		})
+	}
+}
+
 func TestRunTransitionsRejectInvalidRestoredRun(t *testing.T) {
 	started := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
 	tests := []struct {
