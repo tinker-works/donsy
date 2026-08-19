@@ -3,7 +3,6 @@ package netomatic
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -56,8 +55,8 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			path := contractTestPath(operation)
 			query := contractTestQuery(operation)
 			request := contractTestRequest(operation)
-			response := contractDTOs[operation.Response]
-			responseBody, err = json.Marshal(response)
+			response := contractFixtureValue(contractDTOs[operation.Response])
+			responseBody, err = contractFixtureJSON(contractDTOs[operation.Response])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -104,7 +103,7 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 
 			var wantBody []byte
 			if operation.Request != "" && operation.Method != MethodGet {
-				wantBody, err = json.Marshal(request)
+				wantBody, err = contractFixtureJSON(request)
 				if err != nil {
 					t.Fatal(err)
 				}

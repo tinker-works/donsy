@@ -79,12 +79,13 @@ func TestEveryContractDTOJSONRoundTrips(t *testing.T) {
 			if typeName == "" {
 				continue
 			}
-			value, ok := contractDTOs[typeName]
+			fixture, ok := contractDTOs[typeName]
 			if !ok {
 				t.Errorf("%s names unknown DTO %q", operation.Name, typeName)
 				continue
 			}
-			encoded, err := json.Marshal(value)
+			value := contractFixtureValue(fixture)
+			encoded, err := contractFixtureJSON(fixture)
 			if err != nil {
 				t.Errorf("json.Marshal(%s): %v", typeName, err)
 				continue
@@ -100,6 +101,61 @@ func TestEveryContractDTOJSONRoundTrips(t *testing.T) {
 		}
 	}
 }
+
+type contractFixture struct {
+	value any
+	json  string
+}
+
+func contractFixtureValue(fixture any) any {
+	if fixture, ok := fixture.(contractFixture); ok {
+		return fixture.value
+	}
+	return fixture
+}
+
+func contractFixtureJSON(fixture any) ([]byte, error) {
+	if fixture, ok := fixture.(contractFixture); ok {
+		return []byte(fixture.json), nil
+	}
+	return json.Marshal(fixture)
+}
+
+func contractObjectFixture(value any, field, object string) contractFixture {
+	return contractFixture{value: value, json: `{"` + field + `":` + object + `}`}
+}
+
+func contractListFixture(value any, field, object string) contractFixture {
+	return contractFixture{value: value, json: `{"` + field + `":[` + object + `]}`}
+}
+
+const (
+	commentFixtureJSON     = `{"ID":"comment-1","Author":"reviewer","CreatedAt":"2026-08-19T12:01:00Z","Body":"Please review"}`
+	issueFixtureJSON       = `{"ID":"issue-1","Title":"First issue","ParentID":"parent-1","Repository":"origin","State":"Coding","CreatedAt":"2026-08-19T12:00:00Z","Body":"Implement it","Comments":[` + commentFixtureJSON + `],"BlockedBy":["issue-0"]}`
+	pullRequestFixtureJSON = `{"ID":"pr-1","IssueID":"issue-1","Title":"Implement issue","Status":"open","Repository":"origin","Number":7,"URL":"https://example.test/pr/7","Head":"feature/issue-1","Base":"main","Flags":["stale","human-needed"],"ReviewedHead":"abc123","ReviewedBase":"def456","Rounds":2,"Reviews":1,"RoundsGranted":1,"CodingRounds":2,"Approved":true,"CreatedAt":"2026-08-19T12:02:00Z","Comments":[` + commentFixtureJSON + `]}`
+	epicFixtureJSON        = `{"ID":"epic-1","Title":"First epic","Assignee":"alice","Repositories":["origin","secondary"],"Body":"Plan the release","State":"Review","BranchPrefix":"jira-123","Issues":[` + issueFixtureJSON + `],"PullRequests":[` + pullRequestFixtureJSON + `],"DraftingPasses":2}`
+)
+
+var (
+	contractComment = Comment{
+		ID: "comment-1", Author: "reviewer", CreatedAt: "2026-08-19T12:01:00Z", Body: "Please review",
+	}
+	contractIssue = Issue{
+		ID: "issue-1", Title: "First issue", ParentID: "parent-1", Repository: "origin", State: "Coding",
+		CreatedAt: "2026-08-19T12:00:00Z", Body: "Implement it", Comments: []Comment{contractComment}, BlockedBy: []string{"issue-0"},
+	}
+	contractPullRequest = PullRequest{
+		ID: "pr-1", IssueID: "issue-1", Title: "Implement issue", Status: "open", Repository: "origin", Number: 7,
+		URL: "https://example.test/pr/7", Head: "feature/issue-1", Base: "main", Flags: []string{"stale", "human-needed"},
+		ReviewedHead: "abc123", ReviewedBase: "def456", Rounds: 2, Reviews: 1, RoundsGranted: 1, CodingRounds: 2,
+		Approved: true, CreatedAt: "2026-08-19T12:02:00Z", Comments: []Comment{contractComment},
+	}
+	contractEpic = Epic{
+		ID: "epic-1", Title: "First epic", Assignee: "alice", Repositories: []string{"origin", "secondary"},
+		Body: "Plan the release", State: "Review", BranchPrefix: "jira-123", Issues: []Issue{contractIssue},
+		PullRequests: []PullRequest{contractPullRequest}, DraftingPasses: 2,
+	}
+)
 
 var contractDTOs = map[string]any{
 	"ProcessResponse": ProcessResponse{
@@ -134,93 +190,53 @@ var contractDTOs = map[string]any{
 	"SaveSetupResponse": SaveSetupResponse{Setup: Setup{
 		Project: "demo", Repository: "origin", Organisation: "acme", Agent: "coder", Variants: []string{"fast", "safe"}, Complete: true,
 	}},
-	"ListEpicsRequest": ListEpicsRequest{Project: "demo"},
-	"ListEpicsResponse": ListEpicsResponse{Epics: []Epic{{
-		ID: "epic-1", Prefix: "EP-1", Title: "First epic", Description: "Plan the release", Status: "open",
-		Issues: []Issue{{ID: "issue-1", EpicID: "epic-1", Title: "First issue", Description: "Implement it", Status: "open"}},
-	}}},
-	"GetEpicRequest": GetEpicRequest{Project: "demo", Epic: "epic-1"},
-	"GetEpicResponse": GetEpicResponse{Epic: Epic{
-		ID: "epic-1", Prefix: "EP-1", Title: "First epic", Description: "Plan the release", Status: "open",
-		Issues: []Issue{{ID: "issue-1", EpicID: "epic-1", Title: "First issue", Description: "Implement it", Status: "open"}},
-	}},
+	"ListEpicsRequest":  ListEpicsRequest{Project: "demo"},
+	"ListEpicsResponse": contractListFixture(ListEpicsResponse{Epics: []Epic{contractEpic}}, "epics", epicFixtureJSON),
+	"GetEpicRequest":    GetEpicRequest{Project: "demo", Epic: "epic-1"},
+	"GetEpicResponse":   contractObjectFixture(GetEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
 	"CreateEpicRequest": CreateEpicRequest{
 		Project: "demo", Title: "First epic", Description: "Plan the release",
 	},
-	"CreateEpicResponse": CreateEpicResponse{Epic: Epic{
-		ID: "epic-1", Prefix: "EP-1", Title: "First epic", Description: "Plan the release", Status: "open",
-	}},
-	"PrefixEpicRequest": PrefixEpicRequest{Project: "demo", Epic: "epic-1", Prefix: "EP-1"},
-	"PrefixEpicResponse": PrefixEpicResponse{Epic: Epic{
-		ID: "epic-1", Prefix: "EP-1", Title: "First epic", Description: "Plan the release", Status: "open",
-	}},
-	"TransitionEpicRequest": TransitionEpicRequest{Project: "demo", Epic: "epic-1", Status: "in_progress"},
-	"TransitionEpicResponse": TransitionEpicResponse{Epic: Epic{
-		ID: "epic-1", Prefix: "EP-1", Title: "First epic", Description: "Plan the release", Status: "in_progress",
-	}},
-	"CloseEpicRequest": CloseEpicRequest{Project: "demo", Epic: "epic-1"},
-	"CloseEpicResponse": CloseEpicResponse{Epic: Epic{
-		ID: "epic-1", Prefix: "EP-1", Title: "First epic", Description: "Plan the release", Status: "closed",
-	}},
-	"ListIssuesRequest": ListIssuesRequest{Project: "demo", Epic: "epic-1"},
-	"ListIssuesResponse": ListIssuesResponse{Issues: []Issue{{
-		ID: "issue-1", EpicID: "epic-1", Title: "First issue", Description: "Implement it", Status: "open",
-	}}},
-	"GetIssueRequest": GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"GetIssueResponse": GetIssueResponse{Issue: Issue{
-		ID: "issue-1", EpicID: "epic-1", Title: "First issue", Description: "Implement it", Status: "open",
-	}},
+	"CreateEpicResponse":     contractObjectFixture(CreateEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"PrefixEpicRequest":      PrefixEpicRequest{Project: "demo", Epic: "epic-1", Prefix: "EP-1"},
+	"PrefixEpicResponse":     contractObjectFixture(PrefixEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"TransitionEpicRequest":  TransitionEpicRequest{Project: "demo", Epic: "epic-1", Status: "in_progress"},
+	"TransitionEpicResponse": contractObjectFixture(TransitionEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"CloseEpicRequest":       CloseEpicRequest{Project: "demo", Epic: "epic-1"},
+	"CloseEpicResponse":      contractObjectFixture(CloseEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"ListIssuesRequest":      ListIssuesRequest{Project: "demo", Epic: "epic-1"},
+	"ListIssuesResponse":     contractListFixture(ListIssuesResponse{Issues: []Issue{contractIssue}}, "issues", issueFixtureJSON),
+	"GetIssueRequest":        GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
+	"GetIssueResponse":       contractObjectFixture(GetIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"CreateIssueRequest": CreateIssueRequest{
 		Project: "demo", Epic: "epic-1", Title: "First issue", Description: "Implement it",
 	},
-	"CreateIssueResponse": CreateIssueResponse{Issue: Issue{
-		ID: "issue-1", EpicID: "epic-1", Title: "First issue", Description: "Implement it", Status: "open",
-	}},
+	"CreateIssueResponse": contractObjectFixture(CreateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"UpdateIssueRequest": UpdateIssueRequest{
 		Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Updated issue", Description: "Updated details",
 	},
-	"UpdateIssueResponse": UpdateIssueResponse{Issue: Issue{
-		ID: "issue-1", EpicID: "epic-1", Title: "Updated issue", Description: "Updated details", Status: "open",
-	}},
-	"TransitionIssueRequest": TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
-	"TransitionIssueResponse": TransitionIssueResponse{Issue: Issue{
-		ID: "issue-1", EpicID: "epic-1", Title: "First issue", Description: "Implement it", Status: "in_progress",
-	}},
-	"CloseIssueRequest": CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"CloseIssueResponse": CloseIssueResponse{Issue: Issue{
-		ID: "issue-1", EpicID: "epic-1", Title: "First issue", Description: "Implement it", Status: "closed",
-	}},
-	"ListPullRequestsRequest": ListPullRequestsRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"ListPullRequestsResponse": ListPullRequestsResponse{PullRequests: []PullRequest{{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "open",
-	}}},
+	"UpdateIssueResponse":      contractObjectFixture(UpdateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"TransitionIssueRequest":   TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
+	"TransitionIssueResponse":  contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"CloseIssueRequest":        CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
+	"CloseIssueResponse":       contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"ListPullRequestsRequest":  ListPullRequestsRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
+	"ListPullRequestsResponse": contractListFixture(ListPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
 	"CreatePullRequestRequest": CreatePullRequestRequest{
 		Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Implement issue", Description: "The implementation", Branch: "feature/issue-1",
 	},
-	"CreatePullRequestResponse": CreatePullRequestResponse{PullRequest: PullRequest{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "open",
-	}},
-	"CommentPullRequestRequest": CommentPullRequestRequest{Project: "demo", PullRequest: "pr-1", Body: "Please review"},
-	"CommentPullRequestResponse": CommentPullRequestResponse{Comment: Comment{
-		ID: "comment-1", Author: "reviewer", Body: "Please review", CreatedAt: "2026-08-19T12:01:00Z",
-	}},
-	"MergePullRequestRequest": MergePullRequestRequest{Project: "demo", PullRequest: "pr-1"},
-	"MergePullRequestResponse": MergePullRequestResponse{PullRequest: PullRequest{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "merged",
-	}},
-	"ClosePullRequestRequest": ClosePullRequestRequest{Project: "demo", PullRequest: "pr-1"},
-	"ClosePullRequestResponse": ClosePullRequestResponse{PullRequest: PullRequest{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "closed",
-	}},
-	"ResetPullRequestRequest": ResetPullRequestRequest{Project: "demo", PullRequest: "pr-1"},
-	"ResetPullRequestResponse": ResetPullRequestResponse{PullRequest: PullRequest{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "reset",
-	}},
-	"GrantPullRequestRequest": GrantPullRequestRequest{Project: "demo", PullRequest: "pr-1", Branch: "feature/issue-1"},
-	"GrantPullRequestResponse": GrantPullRequestResponse{PullRequest: PullRequest{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "granted",
-	}},
-	"PullRequestDiffRequest": PullRequestDiffRequest{Project: "demo", PullRequest: "pr-1"},
+	"CreatePullRequestResponse":  contractObjectFixture(CreatePullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
+	"CommentPullRequestRequest":  CommentPullRequestRequest{Project: "demo", PullRequest: "pr-1", Body: "Please review"},
+	"CommentPullRequestResponse": contractObjectFixture(CommentPullRequestResponse{Comment: contractComment}, "comment", commentFixtureJSON),
+	"MergePullRequestRequest":    MergePullRequestRequest{Project: "demo", PullRequest: "pr-1"},
+	"MergePullRequestResponse":   contractObjectFixture(MergePullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
+	"ClosePullRequestRequest":    ClosePullRequestRequest{Project: "demo", PullRequest: "pr-1"},
+	"ClosePullRequestResponse":   contractObjectFixture(ClosePullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
+	"ResetPullRequestRequest":    ResetPullRequestRequest{Project: "demo", PullRequest: "pr-1"},
+	"ResetPullRequestResponse":   contractObjectFixture(ResetPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
+	"GrantPullRequestRequest":    GrantPullRequestRequest{Project: "demo", PullRequest: "pr-1", Branch: "feature/issue-1"},
+	"GrantPullRequestResponse":   contractObjectFixture(GrantPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
+	"PullRequestDiffRequest":     PullRequestDiffRequest{Project: "demo", PullRequest: "pr-1"},
 	"PullRequestDiffResponse": PullRequestDiffResponse{Diff: Diff{
 		FilesChanged: 2, Additions: 10, Deletions: 3, Patch: "@@ -1 +1 @@\n-old\n+new\n",
 	}},
@@ -290,19 +306,15 @@ var contractDTOs = map[string]any{
 	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
 		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
 	}},
-	"OpenPullRequestsRequest": OpenPullRequestsRequest{Project: "demo"},
-	"OpenPullRequestsResponse": OpenPullRequestsResponse{PullRequests: []PullRequest{{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "open",
-	}}},
-	"TransitionPullRequestRequest": TransitionPullRequestRequest{Project: "demo", PullRequest: "pr-1", Status: "approved"},
-	"TransitionPullRequestResponse": TransitionPullRequestResponse{PullRequest: PullRequest{
-		ID: "pr-1", Number: 7, Title: "Implement issue", Description: "The implementation", URL: "https://example.test/pr/7", Branch: "feature/issue-1", Status: "approved",
-	}},
-	"ReconcileRequest":     ReconcileRequest{Project: "demo"},
-	"ReconcileResponse":    ReconcileResponse{Reconciled: 4},
-	"PurgeRequest":         PurgeRequest{Project: "demo"},
-	"PurgeResponse":        PurgeResponse{Purged: 2},
-	"ReadDaemonLogRequest": ReadDaemonLogRequest{Offset: 32, Limit: 4},
+	"OpenPullRequestsRequest":       OpenPullRequestsRequest{Project: "demo"},
+	"OpenPullRequestsResponse":      contractListFixture(OpenPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
+	"TransitionPullRequestRequest":  TransitionPullRequestRequest{Project: "demo", PullRequest: "pr-1", Status: "approved"},
+	"TransitionPullRequestResponse": contractObjectFixture(TransitionPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
+	"ReconcileRequest":              ReconcileRequest{Project: "demo"},
+	"ReconcileResponse":             ReconcileResponse{Reconciled: 4},
+	"PurgeRequest":                  PurgeRequest{Project: "demo"},
+	"PurgeResponse":                 PurgeResponse{Purged: 2},
+	"ReadDaemonLogRequest":          ReadDaemonLogRequest{Offset: 32, Limit: 4},
 	"ReadDaemonLogResponse": ReadDaemonLogResponse{
 		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
 	},
