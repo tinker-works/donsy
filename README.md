@@ -15,3 +15,5 @@ make vet
 make lint
 make build
 ```
+
+`make lint` runs the pinned `golangci-lint` release in Docker, so no host linter installation is required.
