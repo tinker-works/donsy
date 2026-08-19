@@ -4,11 +4,11 @@
 package netomatic
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 )
 
@@ -20,22 +20,10 @@ const (
 	APIVersion = ProtocolVersion
 	// APIPrefix is the versioned prefix used by every HTTP operation.
 	APIPrefix = "/api/" + ProtocolVersion
-
-	// MaxDaemonLogBytes and MaxDaemonLogLines are enforced by the daemon for
-	// every log page. A line is never split; a single oversized line is skipped
-	// and the page offset advances past it.
-	MaxDaemonLogBytes = 64 * 1024
-	MaxDaemonLogLines = 1000
-	// MaxLogBytes and MaxLogLines are shorter names for clients that do not
-	// need to distinguish daemon logs from other future log streams.
-	MaxLogBytes = MaxDaemonLogBytes
-	MaxLogLines = MaxDaemonLogLines
 )
 
 var (
-	ErrInvalidProtocol  = errors.New("netomatic: incompatible protocol")
-	ErrInvalidLogOffset = errors.New("netomatic: log offset must not be negative")
-	ErrInvalidLogLimit  = errors.New("netomatic: log limit must be positive")
+	ErrInvalidProtocol = errors.New("netomatic: incompatible protocol")
 )
 
 // CompatibleProtocol reports whether version is understood by this package.
@@ -248,43 +236,67 @@ type Organisation struct {
 }
 
 type AgentSettings struct {
-	Agent   string            `json:"agent"`
-	Variant string            `json:"variant,omitempty"`
-	Values  map[string]string `json:"values,omitempty"`
+	SetupScript string
+	Roles       map[string]AgentProfile
+}
+
+type AgentProfile struct {
+	Agent     string
+	Variant   string
+	MaxRounds int
+}
+
+type AgentSubject struct {
+	Kind string
+	ID   string
+}
+
+type RunUsage struct {
+	TokensIn  int
+	TokensOut int
+	CostUSD   float64
 }
 
 type AgentRun struct {
-	ID           string `json:"id"`
-	Project      string `json:"project,omitempty"`
-	Agent        string `json:"agent,omitempty"`
-	Variant      string `json:"variant,omitempty"`
-	Status       string `json:"status"`
-	SessionID    string `json:"session_id,omitempty"`
-	Error        string `json:"error,omitempty"`
-	StartedAt    string `json:"started_at,omitempty"`
-	FinishedAt   string `json:"finished_at,omitempty"`
-	InputTokens  int64  `json:"input_tokens,omitempty"`
-	OutputTokens int64  `json:"output_tokens,omitempty"`
+	ID          string
+	ProjectID   uint
+	SandboxID   string
+	Role        string
+	Subject     AgentSubject
+	Engine      string
+	Agent       string
+	Variant     string
+	SessionMode string
+	Status      string
+	Round       int
+	Error       string
+	Usage       RunUsage
+	CreatedAt   string
+	StartedAt   *string
+	FinishedAt  *string
 }
 
 type Sandbox struct {
-	ID         string `json:"id"`
-	Name       string `json:"name,omitempty"`
-	Status     string `json:"status"`
-	AgentRunID string `json:"agent_run_id,omitempty"`
+	ID        string
+	ProjectID uint
+	Name      string
+	Role      string
+	Subject   AgentSubject
+	Status    string
+	CreatedAt string
+	UpdatedAt string
 }
 
-type AgentActivity struct {
-	RunID     string `json:"run_id"`
-	Status    string `json:"status"`
-	Message   string `json:"message,omitempty"`
-	UpdatedAt string `json:"updated_at,omitempty"`
+type TranscriptEntry struct {
+	Kind   uint8
+	Tool   string
+	CallID string
+	Text   string
 }
 
-type RunOutput struct {
-	RunID  string `json:"run_id"`
-	Output string `json:"output"`
-	Done   bool   `json:"done"`
+type RunOutputPage struct {
+	Entries []TranscriptEntry
+	Next    int64
 }
 
 type Diff struct {
@@ -338,49 +350,30 @@ type SaveSetupRequest struct {
 type SaveSetupResponse struct {
 	Setup Setup `json:"setup"`
 }
-type ListEpicsRequest struct {
-	Project string `json:"project"`
+type ProjectPath struct {
+	ProjectID uint
 }
-type ListEpicsResponse struct {
-	Epics []Epic `json:"epics"`
+type EpicPath struct {
+	ProjectID uint
+	EpicID    string
 }
-type GetEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-}
-type GetEpicResponse struct {
-	Epic Epic `json:"epic"`
-}
+type ListEpicsResponse []Epic
 type CreateEpicRequest struct {
-	Project     string `json:"project"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
+	Title        string   `json:"title"`
+	Assignee     string   `json:"assignee"`
+	Body         string   `json:"body"`
+	Repositories []string `json:"repositories"`
+	BranchPrefix string   `json:"branchPrefix"`
 }
-type CreateEpicResponse struct {
-	Epic Epic `json:"epic"`
+type TransitionEpicStateRequest struct {
+	State string `json:"state"`
+	Force bool   `json:"force"`
 }
-type PrefixEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-	Prefix  string `json:"prefix"`
+type SetBranchPrefixRequest struct {
+	Prefix string `json:"prefix"`
 }
-type PrefixEpicResponse struct {
-	Epic Epic `json:"epic"`
-}
-type TransitionEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-	Status  string `json:"status"`
-}
-type TransitionEpicResponse struct {
-	Epic Epic `json:"epic"`
-}
-type CloseEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-}
-type CloseEpicResponse struct {
-	Epic Epic `json:"epic"`
+type CompleteEpicResponse struct {
+	Completed bool `json:"completed"`
 }
 type CreateIssuePath struct {
 	ProjectID uint
@@ -488,135 +481,54 @@ type GetOrganisationRequest struct {
 type GetOrganisationResponse struct {
 	Organisation Organisation `json:"organisation"`
 }
-type GetAgentSettingsRequest struct {
-	Project string `json:"project"`
+type GetAgentSettingsPath struct {
+	ProjectID uint
 }
-type GetAgentSettingsResponse struct {
-	Settings []AgentSettings `json:"settings"`
+
+type SetAgentRolePath struct {
+	ProjectID uint
+	Role      string
 }
-type ListAgentRunsRequest struct {
-	Project string `json:"project,omitempty"`
+
+type SetAgentRoleRequest struct {
+	Agent   string `json:"agent"`
+	Variant string `json:"variant"`
 }
-type ListAgentRunsResponse struct {
-	Runs []AgentRun `json:"runs"`
+
+type ListAgentRunsPath struct {
+	ProjectID uint
 }
-type ListSandboxesRequest struct{}
-type ListSandboxesResponse struct {
-	Sandboxes []Sandbox `json:"sandboxes"`
+
+type GetAgentRunPath struct {
+	RunID string
 }
-type CancelAgentRunRequest struct {
-	Run string `json:"run"`
+
+type RunOutputPath struct {
+	RunID string
 }
+
+type RunOutputQuery = url.Values
+
+type AgentActivityQuery = url.Values
+
+type ListSandboxesPath struct {
+	ProjectID uint
+}
+
+type CancelAgentRunPath struct {
+	RunID string
+}
+
 type CancelAgentRunResponse struct {
-	Run AgentRun `json:"run"`
+	Cancelled bool `json:"cancelled"`
 }
-type AgentActivityRequest struct {
-	Run string `json:"run"`
-}
+
 type AgentActivityResponse struct {
-	Activity []AgentActivity `json:"activity"`
-}
-type RunOutputRequest struct {
-	Run    string `json:"run"`
-	Offset int64  `json:"offset,omitempty"`
-}
-type RunOutputResponse struct {
-	Output RunOutput `json:"output"`
+	Sizes map[string]int64 `json:"sizes"`
 }
 
-// ReadDaemonLogRequest addresses the daemon log by byte offset. Offset zero
-// starts at the beginning; clients should use NextOffset from the prior page.
-type ReadDaemonLogRequest struct {
-	Offset int64 `json:"offset"`
-	Limit  int   `json:"limit"`
-}
-
-// ReadDaemonLogResponse contains only complete newline-delimited log lines.
-// Oversized records are omitted, but still advance NextOffset. If the daemon
-// has rotated or truncated the file and Offset is no longer valid, it starts
-// at zero and reports OffsetReset=true.
-type ReadDaemonLogResponse struct {
-	Lines       []string `json:"lines"`
-	NextOffset  int64    `json:"next_offset"`
-	OffsetReset bool     `json:"offset_reset"`
-}
-
-// DaemonLogPage and LogPage are descriptive aliases for the paginated log
-// response used by different client layers.
-type DaemonLogPage = ReadDaemonLogResponse
-type LogPage = ReadDaemonLogResponse
-
-// BoundDaemonLogRequest applies the server's positive limits before reading a
-// log. Limits above the maximum are clamped so an old client cannot request an
-// unbounded response. An offset beyond the current file size is reset by the
-// server when it reads the file; this function only validates the request.
-func BoundDaemonLogRequest(request ReadDaemonLogRequest) (ReadDaemonLogRequest, error) {
-	if request.Offset < 0 {
-		return ReadDaemonLogRequest{}, ErrInvalidLogOffset
-	}
-	if request.Limit <= 0 {
-		return ReadDaemonLogRequest{}, ErrInvalidLogLimit
-	}
-	if request.Limit > MaxDaemonLogLines {
-		request.Limit = MaxDaemonLogLines
-	}
-	return request, nil
-}
-
-// PageDaemonLog applies the daemon log pagination rules to content read from
-// the daemon's log file. It is useful to HTTP adapters and keeps the tricky
-// offset behavior independent of filesystem code. Lines do not include their
-// terminating newline. An unterminated final line is held for the next page.
-func PageDaemonLog(content []byte, request ReadDaemonLogRequest) (ReadDaemonLogResponse, error) {
-	request, err := BoundDaemonLogRequest(request)
-	if err != nil {
-		return ReadDaemonLogResponse{}, err
-	}
-
-	start := request.Offset
-	reset := start > int64(len(content))
-	if reset {
-		start = 0
-	}
-
-	// Requests normally use a previous NextOffset, but a caller may provide an
-	// offset in the middle of a line. Skip that partial line rather than
-	// returning a fragment.
-	if start > 0 && content[start-1] != '\n' {
-		if newline := bytes.IndexByte(content[start:], '\n'); newline >= 0 {
-			start += int64(newline + 1)
-		} else {
-			return ReadDaemonLogResponse{NextOffset: int64(len(content)), OffsetReset: reset}, nil
-		}
-	}
-
-	cursor := start
-	usedBytes := 0
-	lines := make([]string, 0, request.Limit)
-	for len(lines) < request.Limit && cursor < int64(len(content)) {
-		relativeNewline := bytes.IndexByte(content[cursor:], '\n')
-		if relativeNewline < 0 {
-			break
-		}
-		lineEnd := cursor + int64(relativeNewline)
-		next := lineEnd + 1
-		lineBytes := int(next - cursor)
-		if lineBytes > MaxDaemonLogBytes {
-			// Oversized lines cannot be returned whole without breaking the byte
-			// bound. Skip the complete record so a client can continue polling.
-			cursor = next
-			continue
-		}
-		if usedBytes+lineBytes > MaxDaemonLogBytes {
-			break
-		}
-		lines = append(lines, string(content[cursor:lineEnd]))
-		usedBytes += lineBytes
-		cursor = next
-	}
-
-	return ReadDaemonLogResponse{Lines: lines, NextOffset: cursor, OffsetReset: reset}, nil
-}
+type ListAgentRunsResponse []AgentRun
+type ListSandboxesResponse []Sandbox
 
 type AddRepositoryRequest struct {
 	Project string `json:"project"`
@@ -627,30 +539,12 @@ type AddRepositoryRequest struct {
 type AddRepositoryResponse struct {
 	Repository Repository `json:"repository"`
 }
-type GetAgentRunRequest struct {
-	Run string `json:"run"`
-}
-type GetAgentRunResponse struct {
-	Run AgentRun `json:"run"`
-}
-type CompleteRequest struct {
-	Project string `json:"project"`
-	Run     string `json:"run"`
-}
-type CompleteResponse struct {
-	Complete bool `json:"complete"`
-}
-type ReviewApprovedBranchesRequest struct {
-	Project string `json:"project"`
-}
-type ReviewApprovedBranchesResponse struct {
-	Branches []string `json:"branches"`
-}
-type RunEpicRequest struct {
+type RunIssueRequest struct {
 	Project string `json:"project"`
 	Epic    string `json:"epic"`
+	Issue   string `json:"issue"`
 }
-type RunEpicResponse struct {
+type RunIssueResponse struct {
 	Run AgentRun `json:"run"`
 }
 type OpenPullRequestsRequest struct {
@@ -692,12 +586,15 @@ type Client interface {
 	ProjectSummaries(context.Context, ProjectSummariesRequest) (ProjectSummariesResponse, error)
 	GetSetup(context.Context, GetSetupRequest) (GetSetupResponse, error)
 	SaveSetup(context.Context, SaveSetupRequest) (SaveSetupResponse, error)
-	ListEpics(context.Context, ListEpicsRequest) (ListEpicsResponse, error)
-	GetEpic(context.Context, GetEpicRequest) (GetEpicResponse, error)
-	CreateEpic(context.Context, CreateEpicRequest) (CreateEpicResponse, error)
-	PrefixEpic(context.Context, PrefixEpicRequest) (PrefixEpicResponse, error)
-	TransitionEpic(context.Context, TransitionEpicRequest) (TransitionEpicResponse, error)
-	CloseEpic(context.Context, CloseEpicRequest) (CloseEpicResponse, error)
+	ListEpics(context.Context, ProjectPath) (ListEpicsResponse, error)
+	GetEpic(context.Context, EpicPath) (Epic, error)
+	CreateEpic(context.Context, ProjectPath, CreateEpicRequest) error
+	CloseEpic(context.Context, EpicPath) error
+	TransitionEpicState(context.Context, EpicPath, TransitionEpicStateRequest) error
+	SetBranchPrefix(context.Context, EpicPath, SetBranchPrefixRequest) error
+	CompleteEpic(context.Context, EpicPath) (CompleteEpicResponse, error)
+	ReviewApprovedBranches(context.Context, EpicPath) error
+	RunEpicAgent(context.Context, EpicPath) error
 	CreateIssue(context.Context, CreateIssuePath, CreateIssueRequest) error
 	CloseIssue(context.Context, CloseIssuePath) error
 	ListPullRequests(context.Context, ListPullRequestsRequest) (ListPullRequestsResponse, error)
@@ -712,21 +609,19 @@ type Client interface {
 	GetRepository(context.Context, GetRepositoryRequest) (GetRepositoryResponse, error)
 	ListOrganisations(context.Context, ListOrganisationsRequest) (ListOrganisationsResponse, error)
 	GetOrganisation(context.Context, GetOrganisationRequest) (GetOrganisationResponse, error)
-	GetAgentSettings(context.Context, GetAgentSettingsRequest) (GetAgentSettingsResponse, error)
-	ListAgentRuns(context.Context, ListAgentRunsRequest) (ListAgentRunsResponse, error)
-	ListSandboxes(context.Context, ListSandboxesRequest) (ListSandboxesResponse, error)
-	CancelAgentRun(context.Context, CancelAgentRunRequest) (CancelAgentRunResponse, error)
-	AgentActivity(context.Context, AgentActivityRequest) (AgentActivityResponse, error)
-	RunOutput(context.Context, RunOutputRequest) (RunOutputResponse, error)
-	ReadDaemonLog(context.Context, int64, int) (ReadDaemonLogResponse, error)
+	GetAgentSettings(context.Context, GetAgentSettingsPath) (AgentSettings, error)
+	SetAgentRole(context.Context, SetAgentRolePath, SetAgentRoleRequest) error
+	ListAgentRuns(context.Context, ListAgentRunsPath) (ListAgentRunsResponse, error)
+	GetAgentRun(context.Context, GetAgentRunPath) (AgentRun, error)
+	RunOutput(context.Context, RunOutputPath, RunOutputQuery) (RunOutputPage, error)
+	AgentActivity(context.Context, AgentActivityQuery) (AgentActivityResponse, error)
+	CancelAgentRun(context.Context, CancelAgentRunPath) (CancelAgentRunResponse, error)
+	ListSandboxes(context.Context, ListSandboxesPath) (ListSandboxesResponse, error)
 
 	Capabilities(context.Context) (CapabilitiesResponse, error)
 	AddRepository(context.Context, AddRepositoryRequest) (AddRepositoryResponse, error)
-	GetAgentRun(context.Context, GetAgentRunRequest) (GetAgentRunResponse, error)
-	Complete(context.Context, CompleteRequest) (CompleteResponse, error)
-	ReviewApprovedBranches(context.Context, ReviewApprovedBranchesRequest) (ReviewApprovedBranchesResponse, error)
-	RunEpic(context.Context, RunEpicRequest) (RunEpicResponse, error)
 	RunIssueAgent(context.Context, RunIssueAgentPath) error
+	RunIssue(context.Context, RunIssueRequest) (RunIssueResponse, error)
 	OpenPullRequests(context.Context, OpenPullRequestsRequest) (OpenPullRequestsResponse, error)
 	TransitionPullRequest(context.Context, TransitionPullRequestRequest) (TransitionPullRequestResponse, error)
 	Reconcile(context.Context, ReconcileRequest) (ReconcileResponse, error)
@@ -752,9 +647,9 @@ const (
 	routeProcess = APIPrefix + "/process"
 )
 
-// Contract is the complete versioned route inventory. The first 34 rows are
+// Contract is the complete versioned route inventory. The first 42 rows are
 // the original TUI client operations; the remaining rows are daemon routes
-// needed by the host and the public log operation.
+// needed by the host.
 var Contract = []Operation{
 	{Name: "Process", Method: MethodGet, Route: routeProcess, Response: "ProcessResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListProjects", Method: MethodGet, Route: APIPrefix + "/projects", Response: "ListProjectsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -764,12 +659,15 @@ var Contract = []Operation{
 	{Name: "ProjectSummaries", Method: MethodGet, Route: APIPrefix + "/projects/{project}/summaries", Request: "ProjectSummariesRequest", Response: "ProjectSummariesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetSetup", Method: MethodGet, Route: APIPrefix + "/projects/{project}/setup", Request: "GetSetupRequest", Response: "GetSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "SaveSetup", Method: MethodPut, Route: APIPrefix + "/projects/{project}/setup", Request: "SaveSetupRequest", Response: "SaveSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics", Request: "ListEpicsRequest", Response: "ListEpicsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}", Request: "GetEpicRequest", Response: "GetEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics", Request: "CreateEpicRequest", Response: "CreateEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "PrefixEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/prefix", Request: "PrefixEpicRequest", Response: "PrefixEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "TransitionEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/transition", Request: "TransitionEpicRequest", Response: "TransitionEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CloseEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/close", Request: "CloseEpicRequest", Response: "CloseEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics", Path: "ProjectPath", Response: "ListEpicsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}", Path: "EpicPath", Response: "Epic", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics", Path: "ProjectPath", Request: "CreateEpicRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "CloseEpic", Method: MethodDelete, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}", Path: "EpicPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "TransitionEpicState", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/state-transitions", Path: "EpicPath", Request: "TransitionEpicStateRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "SetBranchPrefix", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/branch-prefix", Path: "EpicPath", Request: "SetBranchPrefixRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "CompleteEpic", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/complete", Path: "EpicPath", Response: "CompleteEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/review-approved-branches", Path: "EpicPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "RunEpicAgent", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/agent-runs", Path: "EpicPath", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "CreateIssue", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/issues", Path: "CreateIssuePath", Request: "CreateIssueRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "CloseIssue", Method: MethodDelete, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/issues/{issueID}", Path: "CloseIssuePath", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "ListPullRequests", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/pull-requests", Request: "ListPullRequestsRequest", Response: "ListPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -784,24 +682,22 @@ var Contract = []Operation{
 	{Name: "GetRepository", Method: MethodGet, Route: APIPrefix + "/repositories/{repository}", Request: "GetRepositoryRequest", Response: "GetRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListOrganisations", Method: MethodGet, Route: APIPrefix + "/organisations", Request: "ListOrganisationsRequest", Response: "ListOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetOrganisation", Method: MethodGet, Route: APIPrefix + "/organisations/{organisation}", Request: "GetOrganisationRequest", Response: "GetOrganisationResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GetAgentSettings", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-settings", Request: "GetAgentSettingsRequest", Response: "GetAgentSettingsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ListAgentRuns", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-runs", Request: "ListAgentRunsRequest", Response: "ListAgentRunsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/sandboxes", Request: "ListSandboxesRequest", Response: "ListSandboxesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CancelAgentRun", Method: MethodPost, Route: APIPrefix + "/agent-runs/{run}/cancel", Request: "CancelAgentRunRequest", Response: "CancelAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/activity", Request: "AgentActivityRequest", Response: "AgentActivityResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/output", Request: "RunOutputRequest", Response: "RunOutputResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetAgentSettings", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/agent-settings", Path: "GetAgentSettingsPath", Response: "AgentSettings", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "SetAgentRole", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/agent-settings/roles/{role}", Path: "SetAgentRolePath", Request: "SetAgentRoleRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "ListAgentRuns", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/agent-runs", Path: "ListAgentRunsPath", Response: "ListAgentRunsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{runID}/output", Path: "RunOutputPath", Query: "RunOutputQuery", Response: "RunOutputPage", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/activity", Query: "AgentActivityQuery", Response: "AgentActivityResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CancelAgentRun", Method: MethodPost, Route: APIPrefix + "/agent-runs/{runID}/cancel", Path: "CancelAgentRunPath", Response: "CancelAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/sandboxes", Path: "ListSandboxesPath", Response: "ListSandboxesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "AddRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}", Request: "GetAgentRunRequest", Response: "GetAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "RunEpic", Method: MethodPost, Route: APIPrefix + "/runs/epic", Request: "RunEpicRequest", Response: "RunEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{runID}", Path: "GetAgentRunPath", Response: "AgentRun", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunIssueAgent", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/issues/{issueID}/agent-runs", Path: "RunIssueAgentPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "OpenPullRequests", Method: MethodGet, Route: APIPrefix + "/open-pull-requests", Request: "OpenPullRequestsRequest", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/pull-requests/{pull_request}/transition", Request: "TransitionPullRequestRequest", Response: "TransitionPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Purge", Method: MethodPost, Route: APIPrefix + "/purge", Request: "PurgeRequest", Response: "PurgeResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Response: "ReadDaemonLogResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 }
 
 // ContractOperations returns a copy so callers cannot mutate the package's
@@ -813,10 +709,10 @@ func ContractOperations() []Operation {
 // ClientOperationCount is the number of retained operations that originated
 // at the old TUI boundary. It intentionally excludes daemon-only routes and
 // ReadDaemonLog.
-const ClientOperationCount = 34
+const ClientOperationCount = 38
 
 // DaemonOperationCount includes every row in Contract.
-const DaemonOperationCount = 46
+const DaemonOperationCount = 47
 
 // ValidateContract catches accidental omissions when a route is added to the
 // table without a corresponding public DTO or method declaration.
