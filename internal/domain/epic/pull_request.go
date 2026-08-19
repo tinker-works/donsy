@@ -114,10 +114,15 @@ func (value *PullRequest) Reset() error {
 	if value.Status == StatusMerged {
 		return errors.New("merged pull request cannot be reset")
 	}
-	if value.Status == StatusClosed {
-		value.ClosedAt = time.Time{}
+	reset := *value
+	if reset.Status == StatusClosed {
+		reset.ClosedAt = time.Time{}
 	}
-	value.Status = StatusOpen
+	reset.Status = StatusOpen
+	if err := reset.Validate(); err != nil {
+		return err
+	}
+	*value = reset
 	return nil
 }
 
@@ -141,14 +146,20 @@ func (value *PullRequest) Grant(reviewer owner.Owner) error {
 	if err := reviewer.Validate(); err != nil {
 		return err
 	}
-	for _, existing := range value.Reviewers {
+	granted := *value
+	granted.Reviewers = append([]owner.Owner(nil), value.Reviewers...)
+	for _, existing := range granted.Reviewers {
 		if existing.ID != "" && existing.ID == reviewer.ID || existing.Login == reviewer.Login {
 			return nil
 		}
 	}
-	value.Reviewers = append(value.Reviewers, reviewer)
-	if value.Status == StatusOpen {
-		value.Status = StatusApproved
+	granted.Reviewers = append(granted.Reviewers, reviewer)
+	if granted.Status == StatusOpen {
+		granted.Status = StatusApproved
 	}
+	if err := granted.Validate(); err != nil {
+		return err
+	}
+	*value = granted
 	return nil
 }
