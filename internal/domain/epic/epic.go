@@ -67,7 +67,12 @@ func (value *Epic) SetPrefix(prefix string) error {
 	if prefix == "" || strings.ContainsAny(prefix, " \t\r\n") {
 		return errors.New("epic prefix is invalid")
 	}
-	value.Prefix = prefix
+	updated := *value
+	updated.Prefix = prefix
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	*value = updated
 	return nil
 }
 

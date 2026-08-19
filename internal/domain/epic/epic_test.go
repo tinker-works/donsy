@@ -77,3 +77,26 @@ func TestEpicAddIssueRejectsInvalidRestoredIssue(t *testing.T) {
 		t.Fatalf("AddIssue() mutated the epic on error: got %#v, want %#v", value, want)
 	}
 }
+
+func TestEpicSetPrefixRejectsInvalidRestoredIssue(t *testing.T) {
+	value, err := NewEpic("Migration")
+	if err != nil {
+		t.Fatalf("NewEpic() error = %v", err)
+	}
+	issue, err := NewIssue("Move the model")
+	if err != nil {
+		t.Fatalf("NewIssue() error = %v", err)
+	}
+	if err := value.AddIssue(issue); err != nil {
+		t.Fatalf("AddIssue() error = %v", err)
+	}
+	value.Issues[0].Title = ""
+	want := value
+
+	if err := value.SetPrefix("MIG"); err == nil {
+		t.Fatal("SetPrefix() accepted an epic with an invalid restored issue")
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("SetPrefix() mutated the epic on error: got %#v, want %#v", value, want)
+	}
+}
