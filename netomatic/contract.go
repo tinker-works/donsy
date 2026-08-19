@@ -74,7 +74,7 @@ const (
 	ErrorConflict             ErrorCode = "conflict"
 	ErrorFeatureNotConfigured ErrorCode = "feature_not_configured"
 	ErrorUnavailable          ErrorCode = "unavailable"
-	ErrorInternal             ErrorCode = "internal"
+	ErrorInternal             ErrorCode = "internal_error"
 )
 
 // APIError is the structured error returned for every non-success API

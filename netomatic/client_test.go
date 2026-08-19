@@ -297,6 +297,30 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 		}
 	})
 
+	t.Run("internal error response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+			_, _ = io.WriteString(w, `{"code":"internal_error","detail":"database unavailable"}`)
+		}))
+		defer server.Close()
+		client, err := NewHTTPClient(server.URL, "token")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = client.Process(context.Background())
+		var apiError *APIError
+		if !errors.As(err, &apiError) {
+			t.Fatalf("error = %v, want APIError", err)
+		}
+		if apiError.StatusCode != http.StatusInternalServerError || apiError.Code != ErrorInternal || apiError.Detail != "database unavailable" {
+			t.Fatalf("API error = %#v", apiError)
+		}
+		if !errors.Is(err, ErrInternal) {
+			t.Fatalf("error = %v, want ErrInternal", err)
+		}
+	})
+
 	t.Run("unavailable feature response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.EscapedPath() != APIPrefix+"/projects" {
