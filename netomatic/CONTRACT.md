@@ -5,9 +5,9 @@ exact: a client must reject any protocol other than `v1`. Every operation
 requires the daemon bearer token. The separate unauthenticated `/healthz`
 readiness endpoint is outside this client contract.
 
-The request column names the JSON DTO. Path parameters are also present in the
-request DTO so an implementation can validate a request before constructing a
-route. An em dash means that the operation has no request body.
+The request column names the JSON body DTO, if any. Path parameters are
+supplied separately by the client method and are not sent as JSON. An em dash
+means that the operation has no request body.
 
 | Operation | Method | Route | Request DTO | Response DTO |
 | --- | --- | --- | --- | --- |
@@ -19,12 +19,15 @@ route. An em dash means that the operation has no request body.
 | ProjectSummaries | GET | `/api/v1/projects/{project}/summaries` | `ProjectSummariesRequest` | `ProjectSummariesResponse` |
 | GetSetup | GET | `/api/v1/projects/{project}/setup` | `GetSetupRequest` | `GetSetupResponse` |
 | SaveSetup | PUT | `/api/v1/projects/{project}/setup` | `SaveSetupRequest` | `SaveSetupResponse` |
-| ListEpics | GET | `/api/v1/projects/{project}/epics` | `ListEpicsRequest` | `ListEpicsResponse` |
-| GetEpic | GET | `/api/v1/projects/{project}/epics/{epic}` | `GetEpicRequest` | `GetEpicResponse` |
-| CreateEpic | POST | `/api/v1/projects/{project}/epics` | `CreateEpicRequest` | `CreateEpicResponse` |
-| PrefixEpic | POST | `/api/v1/projects/{project}/epics/{epic}/prefix` | `PrefixEpicRequest` | `PrefixEpicResponse` |
-| TransitionEpic | POST | `/api/v1/projects/{project}/epics/{epic}/transition` | `TransitionEpicRequest` | `TransitionEpicResponse` |
-| CloseEpic | POST | `/api/v1/projects/{project}/epics/{epic}/close` | `CloseEpicRequest` | `CloseEpicResponse` |
+| ListEpics | GET | `/api/v1/projects/{projectID}/epics` | — | `ListEpicsResponse` |
+| GetEpic | GET | `/api/v1/projects/{projectID}/epics/{epicID}` | — | `Epic` |
+| CreateEpic | POST | `/api/v1/projects/{projectID}/epics` | `CreateEpicRequest` | — |
+| CloseEpic | DELETE | `/api/v1/projects/{projectID}/epics/{epicID}` | — | — |
+| TransitionEpicState | POST | `/api/v1/projects/{projectID}/epics/{epicID}/state-transitions` | `TransitionEpicStateRequest` | — |
+| SetBranchPrefix | PUT | `/api/v1/projects/{projectID}/epics/{epicID}/branch-prefix` | `SetBranchPrefixRequest` | — |
+| CompleteEpic | POST | `/api/v1/projects/{projectID}/epics/{epicID}/complete` | — | `CompleteEpicResponse` |
+| ReviewApprovedBranches | POST | `/api/v1/projects/{projectID}/epics/{epicID}/review-approved-branches` | — | — |
+| RunEpicAgent | POST | `/api/v1/projects/{projectID}/epics/{epicID}/agent-runs` | — | — |
 | ListIssues | GET | `/api/v1/projects/{project}/epics/{epic}/issues` | `ListIssuesRequest` | `ListIssuesResponse` |
 | GetIssue | GET | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}` | `GetIssueRequest` | `GetIssueResponse` |
 | CreateIssue | POST | `/api/v1/projects/{project}/epics/{epic}/issues` | `CreateIssueRequest` | `CreateIssueResponse` |
@@ -52,9 +55,6 @@ route. An em dash means that the operation has no request body.
 | Capabilities | GET | `/api/v1/capabilities` | — | `CapabilitiesResponse` |
 | AddRepository | POST | `/api/v1/repositories` | `AddRepositoryRequest` | `AddRepositoryResponse` |
 | GetAgentRun | GET | `/api/v1/agent-runs/{run}` | `GetAgentRunRequest` | `GetAgentRunResponse` |
-| Complete | POST | `/api/v1/complete` | `CompleteRequest` | `CompleteResponse` |
-| ReviewApprovedBranches | POST | `/api/v1/review-approved-branches` | `ReviewApprovedBranchesRequest` | `ReviewApprovedBranchesResponse` |
-| RunEpic | POST | `/api/v1/runs/epic` | `RunEpicRequest` | `RunEpicResponse` |
 | RunIssue | POST | `/api/v1/runs/issue` | `RunIssueRequest` | `RunIssueResponse` |
 | OpenPullRequests | GET | `/api/v1/open-pull-requests` | `OpenPullRequestsRequest` | `OpenPullRequestsResponse` |
 | TransitionPullRequest | POST | `/api/v1/pull-requests/{pull_request}/transition` | `TransitionPullRequestRequest` | `TransitionPullRequestResponse` |

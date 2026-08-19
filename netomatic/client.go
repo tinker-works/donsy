@@ -65,6 +65,14 @@ func escapePathSegment(value string) string {
 	return url.PathEscape(value)
 }
 
+func projectRoute(projectID uint, suffix string) string {
+	return APIPrefix + "/projects/" + strconv.FormatUint(uint64(projectID), 10) + suffix
+}
+
+func epicRoute(path EpicPath, suffix string) string {
+	return projectRoute(path.ProjectID, "/epics/"+escapePathSegment(path.EpicID)+suffix)
+}
+
 func (c *HTTPClient) do(ctx context.Context, method HTTPMethod, route string, authenticated bool, query url.Values, request any, response any, expectedStatus int) error {
 	if expectedStatus < http.StatusOK || expectedStatus >= http.StatusMultipleChoices {
 		return fmt.Errorf("netomatic: invalid expected success status %d", expectedStatus)
@@ -187,46 +195,49 @@ func (c *HTTPClient) SaveSetup(ctx context.Context, request SaveSetupRequest) (S
 	return response, err
 }
 
-func (c *HTTPClient) ListEpics(ctx context.Context, request ListEpicsRequest) (ListEpicsResponse, error) {
+func (c *HTTPClient) ListEpics(ctx context.Context, path ProjectPath) (ListEpicsResponse, error) {
 	var response ListEpicsResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	route := projectRoute(path.ProjectID, "/epics")
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) GetEpic(ctx context.Context, request GetEpicRequest) (GetEpicResponse, error) {
-	var response GetEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) GetEpic(ctx context.Context, path EpicPath) (Epic, error) {
+	var response Epic
+	route := epicRoute(path, "")
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) CreateEpic(ctx context.Context, request CreateEpicRequest) (CreateEpicResponse, error) {
-	var response CreateEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) CreateEpic(ctx context.Context, path ProjectPath, request CreateEpicRequest) error {
+	route := projectRoute(path.ProjectID, "/epics")
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) CloseEpic(ctx context.Context, path EpicPath) error {
+	return c.do(ctx, MethodDelete, epicRoute(path, ""), true, nil, nil, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) TransitionEpicState(ctx context.Context, path EpicPath, request TransitionEpicStateRequest) error {
+	return c.do(ctx, MethodPost, epicRoute(path, "/state-transitions"), true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) SetBranchPrefix(ctx context.Context, path EpicPath, request SetBranchPrefixRequest) error {
+	return c.do(ctx, MethodPut, epicRoute(path, "/branch-prefix"), true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) CompleteEpic(ctx context.Context, path EpicPath) (CompleteEpicResponse, error) {
+	var response CompleteEpicResponse
+	err := c.do(ctx, MethodPost, epicRoute(path, "/complete"), true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) PrefixEpic(ctx context.Context, request PrefixEpicRequest) (PrefixEpicResponse, error) {
-	var response PrefixEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/prefix"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) ReviewApprovedBranches(ctx context.Context, path EpicPath) error {
+	return c.do(ctx, MethodPost, epicRoute(path, "/review-approved-branches"), true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) TransitionEpic(ctx context.Context, request TransitionEpicRequest) (TransitionEpicResponse, error) {
-	var response TransitionEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/transition"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) CloseEpic(ctx context.Context, request CloseEpicRequest) (CloseEpicResponse, error) {
-	var response CloseEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/close"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) RunEpicAgent(ctx context.Context, path EpicPath) error {
+	return c.do(ctx, MethodPost, epicRoute(path, "/agent-runs"), true, nil, nil, nil, http.StatusOK)
 }
 
 func (c *HTTPClient) ListIssues(ctx context.Context, request ListIssuesRequest) (ListIssuesResponse, error) {
@@ -410,24 +421,6 @@ func (c *HTTPClient) GetAgentRun(ctx context.Context, request GetAgentRunRequest
 	var response GetAgentRunResponse
 	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run)
 	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) Complete(ctx context.Context, request CompleteRequest) (CompleteResponse, error) {
-	var response CompleteResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/complete", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) ReviewApprovedBranches(ctx context.Context, request ReviewApprovedBranchesRequest) (ReviewApprovedBranchesResponse, error) {
-	var response ReviewApprovedBranchesResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/review-approved-branches", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) RunEpic(ctx context.Context, request RunEpicRequest) (RunEpicResponse, error) {
-	var response RunEpicResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/runs/epic", true, nil, request, &response, http.StatusOK)
 	return response, err
 }
 
