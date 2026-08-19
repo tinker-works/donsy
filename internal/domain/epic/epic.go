@@ -78,10 +78,15 @@ func (value *Epic) Transition(to Status) error {
 	if err := transition(value.Status, to, validEpicStatus, "epic", false); err != nil {
 		return err
 	}
-	value.Status = to
+	transitioned := *value
+	transitioned.Status = to
 	if to == StatusClosed || to == StatusDone {
-		value.ClosedAt = time.Now()
+		transitioned.ClosedAt = time.Now()
 	}
+	if err := transitioned.Validate(); err != nil {
+		return err
+	}
+	*value = transitioned
 	return nil
 }
 

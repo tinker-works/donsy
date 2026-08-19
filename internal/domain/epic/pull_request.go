@@ -81,13 +81,18 @@ func (value *PullRequest) Transition(to Status) error {
 	if err := transition(value.Status, to, validPullRequestStatus, "pull request", value.Status == StatusMerged); err != nil {
 		return err
 	}
-	value.Status = to
+	transitioned := *value
+	transitioned.Status = to
 	if to == StatusMerged {
-		value.MergedAt = time.Now()
+		transitioned.MergedAt = time.Now()
 	}
 	if to == StatusClosed {
-		value.ClosedAt = time.Now()
+		transitioned.ClosedAt = time.Now()
 	}
+	if err := transitioned.Validate(); err != nil {
+		return err
+	}
+	*value = transitioned
 	return nil
 }
 

@@ -1,6 +1,9 @@
 package epic
 
-import "testing"
+import (
+	"reflect"
+	"testing"
+)
 
 func TestEpicOwnsIssues(t *testing.T) {
 	value, err := New("Migration")
@@ -22,5 +25,28 @@ func TestEpicOwnsIssues(t *testing.T) {
 	}
 	if err := value.AddIssue(issue); err == nil {
 		t.Fatal("AddIssue() accepted an issue after close")
+	}
+}
+
+func TestEpicTransitionRejectsInvalidRestoredIssue(t *testing.T) {
+	value, err := NewEpic("Migration")
+	if err != nil {
+		t.Fatalf("NewEpic() error = %v", err)
+	}
+	issue, err := NewIssue("Move the model")
+	if err != nil {
+		t.Fatalf("NewIssue() error = %v", err)
+	}
+	if err := value.AddIssue(issue); err != nil {
+		t.Fatalf("AddIssue() error = %v", err)
+	}
+	value.Issues[0].Title = ""
+	want := value
+
+	if err := value.Transition(StatusInProgress); err == nil {
+		t.Fatal("Transition() accepted an epic with an invalid restored issue")
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("Transition() mutated the epic on error: got %#v, want %#v", value, want)
 	}
 }
