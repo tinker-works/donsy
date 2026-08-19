@@ -191,9 +191,19 @@ func contractTestRoute(operation Operation, request any) string {
 		"name":          "Name",
 	} {
 		field := value.FieldByName(fieldName)
-		if field.IsValid() && field.Kind() == reflect.String {
-			route = strings.Replace(route, "{"+placeholder+"}", url.PathEscape(field.String()), 1)
+		if !field.IsValid() {
+			continue
 		}
+		var fieldValue string
+		switch field.Kind() {
+		case reflect.String:
+			fieldValue = field.String()
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			fieldValue = strconv.FormatUint(field.Uint(), 10)
+		default:
+			continue
+		}
+		route = strings.Replace(route, "{"+placeholder+"}", url.PathEscape(fieldValue), 1)
 	}
 	return route
 }
@@ -382,6 +392,72 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 			t.Fatalf("error = %v, want ErrResponseTooLarge", err)
 		}
 	})
+}
+
+func TestHTTPClientMaintenanceFeaturesReturnUnavailable(t *testing.T) {
+	for _, test := range []struct {
+		name   string
+		path   string
+		detail string
+		call   func(context.Context, *HTTPClient) error
+	}{
+		{
+			name:   "sandbox reconciliation",
+			path:   APIPrefix + "/projects/42/maintenance/reconcile",
+			detail: "sandbox reconciliation requires the worker coordinator is not configured for this process",
+			call: func(ctx context.Context, client *HTTPClient) error {
+				return client.ReconcileSandboxes(ctx, ProjectPath{ProjectID: 42})
+			},
+		},
+		{
+			name:   "finished-work purge",
+			path:   APIPrefix + "/projects/42/maintenance/purge",
+			detail: "finished-work purge requires the worker coordinator is not configured for this process",
+			call: func(ctx context.Context, client *HTTPClient) error {
+				return client.PurgeFinishedWork(ctx, ProjectPath{ProjectID: 42})
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost {
+					t.Errorf("method = %q, want %q", r.Method, http.MethodPost)
+				}
+				if r.URL.EscapedPath() != test.path {
+					t.Errorf("path = %q, want %q", r.URL.EscapedPath(), test.path)
+				}
+				if r.Header.Get("Authorization") != "Bearer token" {
+					t.Errorf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Errorf("read request body: %v", err)
+				}
+				if len(body) != 0 {
+					t.Errorf("request body = %s, want empty", body)
+				}
+				w.WriteHeader(http.StatusNotImplemented)
+				_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"`+test.detail+`"}`)
+			}))
+			defer server.Close()
+
+			client, err := NewHTTPClient(server.URL, "token")
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = test.call(context.Background(), client)
+			var apiError *APIError
+			if !errors.As(err, &apiError) {
+				t.Fatalf("error = %v, want APIError", err)
+			}
+			if apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != test.detail {
+				t.Fatalf("API error = %#v", apiError)
+			}
+			if !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("error = %v, want ErrUnavailable", err)
+			}
+		})
+	}
 }
 
 type contractPathFixture struct {

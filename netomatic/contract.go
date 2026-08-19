@@ -496,6 +496,9 @@ type PullRequestDiffRequest struct {
 type PullRequestDiffResponse struct {
 	Diff Diff `json:"diff"`
 }
+type ProjectPath struct {
+	ProjectID uint
+}
 type ListRepositoriesRequest struct {
 	Organisation string `json:"organisation,omitempty"`
 }
@@ -706,18 +709,6 @@ type TransitionPullRequestRequest struct {
 type TransitionPullRequestResponse struct {
 	PullRequest PullRequest `json:"pull_request"`
 }
-type ReconcileRequest struct {
-	Project string `json:"project,omitempty"`
-}
-type ReconcileResponse struct {
-	Reconciled int `json:"reconciled"`
-}
-type PurgeRequest struct {
-	Project string `json:"project,omitempty"`
-}
-type PurgeResponse struct {
-	Purged int `json:"purged"`
-}
 
 // Client is the complete public daemon contract. Implementations may use any
 // transport, but all methods are context-aware and exchange only these public
@@ -772,8 +763,8 @@ type Client interface {
 	RunIssue(context.Context, RunIssueRequest) (RunIssueResponse, error)
 	OpenPullRequests(context.Context, OpenPullRequestsRequest) (OpenPullRequestsResponse, error)
 	TransitionPullRequest(context.Context, TransitionPullRequestRequest) (TransitionPullRequestResponse, error)
-	Reconcile(context.Context, ReconcileRequest) (ReconcileResponse, error)
-	Purge(context.Context, PurgeRequest) (PurgeResponse, error)
+	ReconcileSandboxes(context.Context, ProjectPath) error
+	PurgeFinishedWork(context.Context, ProjectPath) error
 }
 
 // Operation describes one row in the daemon contract table. Path, Query, and
@@ -846,8 +837,8 @@ var Contract = []Operation{
 	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "OpenPullRequests", Method: MethodGet, Route: APIPrefix + "/open-pull-requests", Request: "OpenPullRequestsRequest", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/pull-requests/{pull_request}/transition", Request: "TransitionPullRequestRequest", Response: "TransitionPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "Purge", Method: MethodPost, Route: APIPrefix + "/purge", Request: "PurgeRequest", Response: "PurgeResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ReconcileSandboxes", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/maintenance/reconcile", Path: "ProjectPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "PurgeFinishedWork", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/maintenance/purge", Path: "ProjectPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Response: "ReadDaemonLogResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 }
 

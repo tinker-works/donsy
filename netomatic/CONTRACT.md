@@ -5,9 +5,9 @@ exact: a client must reject any protocol other than `v1`. Every operation
 requires the daemon bearer token. The separate unauthenticated `/healthz`
 readiness endpoint is outside this client contract.
 
-The request column names the JSON DTO. Path parameters are also present in the
-request DTO so an implementation can validate a request before constructing a
-route. An em dash means that the operation has no request body.
+The request column names the JSON body DTO, if any. Path parameters are
+supplied separately by the client method and are not sent as JSON. An em dash
+means that the operation has no request body.
 
 | Operation | Method | Route | Request DTO | Response DTO |
 | --- | --- | --- | --- | --- |
@@ -58,8 +58,8 @@ route. An em dash means that the operation has no request body.
 | RunIssue | POST | `/api/v1/runs/issue` | `RunIssueRequest` | `RunIssueResponse` |
 | OpenPullRequests | GET | `/api/v1/open-pull-requests` | `OpenPullRequestsRequest` | `OpenPullRequestsResponse` |
 | TransitionPullRequest | POST | `/api/v1/pull-requests/{pull_request}/transition` | `TransitionPullRequestRequest` | `TransitionPullRequestResponse` |
-| Reconcile | POST | `/api/v1/reconcile` | `ReconcileRequest` | `ReconcileResponse` |
-| Purge | POST | `/api/v1/purge` | `PurgeRequest` | `PurgeResponse` |
+| ReconcileSandboxes | POST | `/api/v1/projects/{projectID}/maintenance/reconcile` | — | — |
+| PurgeFinishedWork | POST | `/api/v1/projects/{projectID}/maintenance/purge` | — | — |
 | ReadDaemonLog | GET | `/api/v1/daemon-log` | `ReadDaemonLogRequest` | `ReadDaemonLogResponse` |
 
 ## Daemon Log

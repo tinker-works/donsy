@@ -321,10 +321,6 @@ var contractDTOs = map[string]any{
 	"OpenPullRequestsResponse":      contractListFixture(OpenPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
 	"TransitionPullRequestRequest":  TransitionPullRequestRequest{Project: "demo", PullRequest: "pr-1", Status: "approved"},
 	"TransitionPullRequestResponse": contractObjectFixture(TransitionPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"ReconcileRequest":              ReconcileRequest{Project: "demo"},
-	"ReconcileResponse":             ReconcileResponse{Reconciled: 4},
-	"PurgeRequest":                  PurgeRequest{Project: "demo"},
-	"PurgeResponse":                 PurgeResponse{Purged: 2},
 	"ReadDaemonLogRequest":          ReadDaemonLogRequest{Offset: 32, Limit: 4},
 	"ReadDaemonLogResponse": ReadDaemonLogResponse{
 		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
@@ -333,7 +329,8 @@ var contractDTOs = map[string]any{
 }
 
 var contractPathDTOs = map[string]any{
-	"ShapePath": contractPathFixture{Project: "demo/blue"},
+	"ShapePath":   contractPathFixture{Project: "demo/blue"},
+	"ProjectPath": ProjectPath{ProjectID: 42},
 }
 
 var contractQueryDTOs = map[string]url.Values{
