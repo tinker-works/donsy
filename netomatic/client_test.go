@@ -5,11 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -21,14 +23,25 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 	var responseBody []byte
 	var requestMethod string
 	var requestPath string
+	var requestQuery url.Values
+	var requestRawQuery string
+	var requestStatus int
 	var requestAuthorization string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		requestMethod = r.Method
 		requestPath = r.URL.EscapedPath()
+		requestQuery = r.URL.Query()
+		requestRawQuery = r.URL.RawQuery
+		if len(requestQuery) == 0 {
+			requestQuery = nil
+		}
+		requestStatus = 0
 		requestAuthorization = r.Header.Get("Authorization")
 		requestBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
+		requestStatus = operation.SuccessStatus
+		w.WriteHeader(operation.SuccessStatus)
 		_, _ = w.Write(responseBody)
 	}))
 	defer server.Close()
@@ -40,6 +53,8 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 
 	for _, operation = range Contract {
 		t.Run(operation.Name, func(t *testing.T) {
+			path := contractTestPath(operation)
+			query := contractTestQuery(operation)
 			request := contractDTOs[operation.Request]
 			response := contractDTOs[operation.Response]
 			responseBody, err = json.Marshal(response)
@@ -49,9 +64,12 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			requestBody = nil
 			requestMethod = ""
 			requestPath = ""
+			requestQuery = nil
+			requestRawQuery = ""
+			requestStatus = 0
 			requestAuthorization = ""
 
-			got, err := callContractOperation(client, operation, request)
+			got, err := callContractOperationParts(client, operation, path, query, request)
 			if err != nil {
 				t.Fatalf("%s(): %v", operation.Name, err)
 			}
@@ -62,8 +80,17 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			if requestMethod != string(operation.Method) {
 				t.Errorf("method = %q, want %q", requestMethod, operation.Method)
 			}
-			if requestPath != contractTestRoute(operation, request) {
-				t.Errorf("path = %q, want %q", requestPath, contractTestRoute(operation, request))
+			if requestPath != contractTestRoute(operation, path) {
+				t.Errorf("path = %q, want %q", requestPath, contractTestRoute(operation, path))
+			}
+			if requestStatus != operation.SuccessStatus {
+				t.Errorf("status = %d, want %d", requestStatus, operation.SuccessStatus)
+			}
+			if requestQuery.Encode() != query.Encode() {
+				t.Errorf("query = %v, want %v", requestQuery, contractTestQuery(operation))
+			}
+			if requestRawQuery != query.Encode() {
+				t.Errorf("raw query = %q, want %q", requestRawQuery, query.Encode())
 			}
 			wantAuthorization := ""
 			if operation.Authenticated {
@@ -74,7 +101,7 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			}
 
 			var wantBody []byte
-			if operation.Request != "" {
+			if operation.Request != "" && operation.Method != MethodGet {
 				wantBody, err = json.Marshal(request)
 				if err != nil {
 					t.Fatal(err)
@@ -87,7 +114,7 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 	}
 }
 
-func callContractOperation(client Client, operation Operation, request any) (any, error) {
+func callContractOperationParts(client any, operation Operation, path any, query url.Values, request any) (any, error) {
 	ctx := context.Background()
 	method := reflect.ValueOf(client).MethodByName(operation.Name)
 	if !method.IsValid() {
@@ -98,14 +125,46 @@ func callContractOperation(client Client, operation Operation, request any) (any
 	if operation.Name == "ReadDaemonLog" {
 		logRequest := request.(ReadDaemonLogRequest)
 		args = append(args, reflect.ValueOf(logRequest.Offset), reflect.ValueOf(logRequest.Limit))
-	} else if operation.Request != "" {
-		args = append(args, reflect.ValueOf(request))
+	} else {
+		if operation.Path != "" {
+			args = append(args, reflect.ValueOf(path))
+		}
+		if operation.Query != "" {
+			args = append(args, reflect.ValueOf(query))
+		}
+		if operation.Request != "" {
+			args = append(args, reflect.ValueOf(request))
+		}
 	}
 	results := method.Call(args)
-	if errValue := results[1].Interface(); errValue != nil {
-		return nil, errValue.(error)
+	switch len(results) {
+	case 1:
+		if err := contractCallError(results[0]); err != nil {
+			return nil, err
+		}
+		return nil, nil
+	case 2:
+		if err := contractCallError(results[1]); err != nil {
+			return nil, err
+		}
+		return results[0].Interface(), nil
+	default:
+		return nil, fmt.Errorf("unexpected result count %d", len(results))
 	}
-	return results[0].Interface(), nil
+}
+
+func contractCallError(value reflect.Value) error {
+	if !value.IsValid() {
+		return nil
+	}
+	if (value.Kind() == reflect.Interface || value.Kind() == reflect.Pointer) && value.IsNil() {
+		return nil
+	}
+	err, ok := value.Interface().(error)
+	if !ok {
+		return fmt.Errorf("result %s is not an error", value.Type())
+	}
+	return err
 }
 
 func contractTestRoute(operation Operation, request any) string {
@@ -115,13 +174,20 @@ func contractTestRoute(operation Operation, request any) string {
 	}
 	value := reflect.ValueOf(request)
 	for placeholder, fieldName := range map[string]string{
-		"project":      "Project",
-		"epic":         "Epic",
-		"issue":        "Issue",
-		"pull_request": "PullRequest",
-		"repository":   "Repository",
-		"organisation": "Organisation",
-		"run":          "Run",
+		"project":       "Project",
+		"projectID":     "ProjectID",
+		"epic":          "Epic",
+		"epicID":        "EpicID",
+		"issue":         "Issue",
+		"issueID":       "IssueID",
+		"pull_request":  "PullRequest",
+		"pullRequestID": "PullRequestID",
+		"repository":    "Repository",
+		"organisation":  "Organisation",
+		"run":           "Run",
+		"runID":         "RunID",
+		"role":          "Role",
+		"name":          "Name",
 	} {
 		field := value.FieldByName(fieldName)
 		if field.IsValid() && field.Kind() == reflect.String {
@@ -129,6 +195,20 @@ func contractTestRoute(operation Operation, request any) string {
 		}
 	}
 	return route
+}
+
+func contractTestPath(operation Operation) any {
+	if operation.Path == "" {
+		return contractDTOs[operation.Request]
+	}
+	return contractPathDTOs[operation.Path]
+}
+
+func contractTestQuery(operation Operation) url.Values {
+	if operation.Query == "" {
+		return nil
+	}
+	return contractQueryDTOs[operation.Query]
 }
 
 func TestHTTPClientEscapesPathSegments(t *testing.T) {
@@ -206,6 +286,21 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 		}
 	})
 
+	t.Run("unexpected 2xx response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"status":"running"}`)
+		}))
+		defer server.Close()
+		client, err := NewHTTPClient(server.URL, "token")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.Process(context.Background()); !errors.Is(err, ErrUnexpectedStatus) {
+			t.Fatalf("error = %v, want ErrUnexpectedStatus", err)
+		}
+	})
+
 	t.Run("oversized response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			_, _ = io.Copy(w, bytes.NewReader(bytes.Repeat([]byte{'x'}, MaxResponseBytes+1)))
@@ -221,15 +316,142 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 	})
 }
 
-func TestHTTPClientBoundsDaemonLogRequest(t *testing.T) {
-	var body ReadDaemonLogRequest
+type contractPathFixture struct {
+	Project string
+}
+
+type contractBodyFixture struct {
+	Name string `json:"name"`
+}
+
+type contractShapeResponse struct {
+	OK bool `json:"ok"`
+}
+
+type contractShapeClient struct {
+	client *HTTPClient
+}
+
+func (c contractShapeClient) PathOnly(ctx context.Context, path contractPathFixture) error {
+	route := APIPrefix + "/shape/" + escapePathSegment(path.Project)
+	return c.client.do(ctx, MethodPost, route, false, nil, nil, nil, http.StatusNoContent)
+}
+
+func (c contractShapeClient) PathAndBody(ctx context.Context, path contractPathFixture, body contractBodyFixture) (contractShapeResponse, error) {
+	var response contractShapeResponse
+	route := APIPrefix + "/shape/" + escapePathSegment(path.Project) + "/body"
+	err := c.client.do(ctx, MethodPost, route, false, nil, body, &response, http.StatusCreated)
+	return response, err
+}
+
+func (c contractShapeClient) Query(ctx context.Context, query url.Values) (contractShapeResponse, error) {
+	var response contractShapeResponse
+	err := c.client.do(ctx, MethodGet, APIPrefix+"/shape/query", false, query, nil, &response, http.StatusOK)
+	return response, err
+}
+
+func TestContractHarnessSeparatesPathQueryAndBody(t *testing.T) {
+	var requests []struct {
+		method   string
+		path     string
+		query    url.Values
+		rawQuery string
+		body     []byte
+	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		encoded, err := io.ReadAll(r.Body)
+		body, err := io.ReadAll(r.Body)
 		if err != nil {
 			t.Error(err)
 		}
-		if err := json.Unmarshal(encoded, &body); err != nil {
-			t.Error(err)
+		requests = append(requests, struct {
+			method   string
+			path     string
+			query    url.Values
+			rawQuery string
+			body     []byte
+		}{method: r.Method, path: r.URL.EscapedPath(), query: r.URL.Query(), rawQuery: r.URL.RawQuery, body: body})
+
+		switch r.URL.EscapedPath() {
+		case APIPrefix + "/shape/demo%2Fblue":
+			w.WriteHeader(http.StatusNoContent)
+		case APIPrefix + "/shape/demo%2Fblue/body":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		case APIPrefix + "/shape/query":
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"ok":true}`)
+		default:
+			t.Errorf("unexpected path %q", r.URL.EscapedPath())
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	shapeClient := contractShapeClient{client: client}
+
+	pathOnly := Operation{
+		Name: "PathOnly", Method: MethodPost, Route: APIPrefix + "/shape/{project}", Path: "ShapePath", SuccessStatus: http.StatusNoContent,
+	}
+	path := contractPathDTOs["ShapePath"]
+	if _, err := callContractOperationParts(shapeClient, pathOnly, path, nil, nil); err != nil {
+		t.Fatal(err)
+	}
+
+	pathAndBody := Operation{
+		Name: "PathAndBody", Method: MethodPost, Route: APIPrefix + "/shape/{project}/body", Path: "ShapePath", Request: "ShapeBody", SuccessStatus: http.StatusCreated,
+	}
+	body := contractDTOs["ShapeBody"]
+	response, err := callContractOperationParts(shapeClient, pathAndBody, path, nil, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(response, contractShapeResponse{OK: true}) {
+		t.Fatalf("response = %#v", response)
+	}
+
+	queryOperation := Operation{
+		Name: "Query", Method: MethodGet, Route: APIPrefix + "/shape/query", Query: "ShapeQuery", SuccessStatus: http.StatusOK,
+	}
+	query := contractQueryDTOs["ShapeQuery"]
+	response, err = callContractOperationParts(shapeClient, queryOperation, nil, query, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(response, contractShapeResponse{OK: true}) {
+		t.Fatalf("response = %#v", response)
+	}
+
+	if len(requests) != 3 {
+		t.Fatalf("request count = %d, want 3", len(requests))
+	}
+	if requests[0].method != http.MethodPost || requests[1].method != http.MethodPost || requests[2].method != http.MethodGet {
+		t.Fatalf("methods = %q, %q, %q", requests[0].method, requests[1].method, requests[2].method)
+	}
+	if len(requests[0].body) != 0 || len(requests[2].body) != 0 {
+		t.Fatalf("path-only/query bodies = %q and %q, want empty", requests[0].body, requests[2].body)
+	}
+	wantBody := `{"name":"new"}`
+	if string(requests[1].body) != wantBody {
+		t.Fatalf("path-plus-body body = %s, want %s", requests[1].body, wantBody)
+	}
+	if !reflect.DeepEqual(requests[2].query, query) {
+		t.Fatalf("query = %v, want %v", requests[2].query, query)
+	}
+	if requests[2].rawQuery != query.Encode() {
+		t.Fatalf("raw query = %q, want %q", requests[2].rawQuery, query.Encode())
+	}
+}
+
+func TestHTTPClientBoundsDaemonLogRequest(t *testing.T) {
+	var query url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		if r.ContentLength != 0 {
+			t.Errorf("GET content length = %d, want 0", r.ContentLength)
 		}
 		_, _ = io.WriteString(w, `{"lines":["line"],"next_offset":12,"offset_reset":false}`)
 	}))
@@ -243,8 +465,9 @@ func TestHTTPClientBoundsDaemonLogRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if body.Offset != 8 || body.Limit != MaxDaemonLogLines || !reflect.DeepEqual(response.Lines, []string{"line"}) {
-		t.Fatalf("request = %#v, response = %#v", body, response)
+	wantQuery := url.Values{"offset": {"8"}, "limit": {strconv.Itoa(MaxDaemonLogLines)}}
+	if !reflect.DeepEqual(query, wantQuery) || !reflect.DeepEqual(response.Lines, []string{"line"}) {
+		t.Fatalf("query = %v, response = %#v", query, response)
 	}
 
 	for _, test := range []struct {

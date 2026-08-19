@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"net/url"
 	"reflect"
 	"testing"
 )
@@ -29,8 +31,50 @@ func TestContractIsComplete(t *testing.T) {
 	}
 }
 
+func TestOperationValidationAllowsNoContentRows(t *testing.T) {
+	if err := validateOperation(Operation{
+		Name: "Close", Method: MethodDelete, Route: APIPrefix + "/items/{item}", SuccessStatus: 204,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	for _, status := range []int{0, 199, 300, 500} {
+		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
+			err := validateOperation(Operation{
+				Name: "Close", Method: MethodDelete, Route: APIPrefix + "/items/{item}", SuccessStatus: status,
+			})
+			if err == nil {
+				t.Fatalf("validateOperation accepted status %d", status)
+			}
+		})
+	}
+
+	if err := validateOperation(Operation{Name: "MissingResponse", Method: MethodGet, Route: APIPrefix + "/items", SuccessStatus: 200}); err != nil {
+		t.Fatalf("empty response rejected: %v", err)
+	}
+	for _, operation := range []Operation{
+		{Method: MethodGet, Route: APIPrefix + "/items", SuccessStatus: 200},
+		{Name: "MissingMethod", Route: APIPrefix + "/items", SuccessStatus: 200},
+		{Name: "MissingRoute", Method: MethodGet, SuccessStatus: 200},
+	} {
+		if err := validateOperation(operation); err == nil {
+			t.Fatalf("incomplete operation accepted: %#v", operation)
+		}
+	}
+}
+
 func TestEveryContractDTOJSONRoundTrips(t *testing.T) {
 	for _, operation := range Contract {
+		if operation.Path != "" {
+			if _, ok := contractPathDTOs[operation.Path]; !ok {
+				t.Errorf("%s names unknown path fixture %q", operation.Name, operation.Path)
+			}
+		}
+		if operation.Query != "" {
+			if _, ok := contractQueryDTOs[operation.Query]; !ok {
+				t.Errorf("%s names unknown query fixture %q", operation.Name, operation.Query)
+			}
+		}
 		for _, typeName := range []string{operation.Request, operation.Response} {
 			if typeName == "" {
 				continue
@@ -262,6 +306,16 @@ var contractDTOs = map[string]any{
 	"ReadDaemonLogResponse": ReadDaemonLogResponse{
 		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
 	},
+	"ShapeBody": contractBodyFixture{Name: "new"},
+}
+
+var contractPathDTOs = map[string]any{
+	"ShapePath": contractPathFixture{Project: "demo/blue"},
+}
+
+var contractQueryDTOs = map[string]url.Values{
+	"ReadDaemonLogQuery": {"offset": {"32"}, "limit": {"4"}},
+	"ShapeQuery":         {"runID": {"run-1", "run-2"}, "from": {"12"}},
 }
 
 func TestRepresentativeDTOJSON(t *testing.T) {

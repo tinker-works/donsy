@@ -771,15 +771,18 @@ type Client interface {
 	Purge(context.Context, PurgeRequest) (PurgeResponse, error)
 }
 
-// Operation describes one row in the daemon contract table. Request and
-// Response contain Go type names to make the table useful to both client and
-// server implementers without importing either implementation.
+// Operation describes one row in the daemon contract table. Path, Query, and
+// Request contain Go type names for the independently supplied path, query,
+// and JSON body values. Response is optional for error-only operations.
 type Operation struct {
 	Name          string
 	Method        HTTPMethod
 	Route         string
+	Path          string
+	Query         string
 	Request       string
 	Response      string
+	SuccessStatus int
 	Authenticated bool
 }
 
@@ -791,57 +794,57 @@ const (
 // the original TUI client operations; the remaining rows are daemon routes
 // needed by the host and the public log operation.
 var Contract = []Operation{
-	{Name: "Process", Method: MethodGet, Route: routeProcess, Response: "ProcessResponse", Authenticated: true},
-	{Name: "ListProjects", Method: MethodGet, Route: APIPrefix + "/projects", Response: "ListProjectsResponse", Authenticated: true},
-	{Name: "CreateProject", Method: MethodPost, Route: APIPrefix + "/projects", Request: "CreateProjectRequest", Response: "CreateProjectResponse", Authenticated: true},
-	{Name: "OpenProject", Method: MethodPost, Route: APIPrefix + "/projects/{project}/open", Request: "OpenProjectRequest", Response: "OpenProjectResponse", Authenticated: true},
-	{Name: "ForgetProject", Method: MethodDelete, Route: APIPrefix + "/projects/{project}", Request: "ForgetProjectRequest", Response: "ForgetProjectResponse", Authenticated: true},
-	{Name: "ProjectSummaries", Method: MethodGet, Route: APIPrefix + "/projects/{project}/summaries", Request: "ProjectSummariesRequest", Response: "ProjectSummariesResponse", Authenticated: true},
-	{Name: "GetSetup", Method: MethodGet, Route: APIPrefix + "/projects/{project}/setup", Request: "GetSetupRequest", Response: "GetSetupResponse", Authenticated: true},
-	{Name: "SaveSetup", Method: MethodPut, Route: APIPrefix + "/projects/{project}/setup", Request: "SaveSetupRequest", Response: "SaveSetupResponse", Authenticated: true},
-	{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics", Request: "ListEpicsRequest", Response: "ListEpicsResponse", Authenticated: true},
-	{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}", Request: "GetEpicRequest", Response: "GetEpicResponse", Authenticated: true},
-	{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics", Request: "CreateEpicRequest", Response: "CreateEpicResponse", Authenticated: true},
-	{Name: "PrefixEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/prefix", Request: "PrefixEpicRequest", Response: "PrefixEpicResponse", Authenticated: true},
-	{Name: "TransitionEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/transition", Request: "TransitionEpicRequest", Response: "TransitionEpicResponse", Authenticated: true},
-	{Name: "CloseEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/close", Request: "CloseEpicRequest", Response: "CloseEpicResponse", Authenticated: true},
-	{Name: "ListIssues", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues", Request: "ListIssuesRequest", Response: "ListIssuesResponse", Authenticated: true},
-	{Name: "GetIssue", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}", Request: "GetIssueRequest", Response: "GetIssueResponse", Authenticated: true},
-	{Name: "CreateIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues", Request: "CreateIssueRequest", Response: "CreateIssueResponse", Authenticated: true},
-	{Name: "UpdateIssue", Method: MethodPut, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}", Request: "UpdateIssueRequest", Response: "UpdateIssueResponse", Authenticated: true},
-	{Name: "TransitionIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/transition", Request: "TransitionIssueRequest", Response: "TransitionIssueResponse", Authenticated: true},
-	{Name: "CloseIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/close", Request: "CloseIssueRequest", Response: "CloseIssueResponse", Authenticated: true},
-	{Name: "ListPullRequests", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/pull-requests", Request: "ListPullRequestsRequest", Response: "ListPullRequestsResponse", Authenticated: true},
-	{Name: "CreatePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/pull-requests", Request: "CreatePullRequestRequest", Response: "CreatePullRequestResponse", Authenticated: true},
-	{Name: "CommentPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/comments", Request: "CommentPullRequestRequest", Response: "CommentPullRequestResponse", Authenticated: true},
-	{Name: "MergePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/merge", Request: "MergePullRequestRequest", Response: "MergePullRequestResponse", Authenticated: true},
-	{Name: "ClosePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/close", Request: "ClosePullRequestRequest", Response: "ClosePullRequestResponse", Authenticated: true},
-	{Name: "ResetPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/reset", Request: "ResetPullRequestRequest", Response: "ResetPullRequestResponse", Authenticated: true},
-	{Name: "GrantPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/grant", Request: "GrantPullRequestRequest", Response: "GrantPullRequestResponse", Authenticated: true},
-	{Name: "PullRequestDiff", Method: MethodGet, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/diff", Request: "PullRequestDiffRequest", Response: "PullRequestDiffResponse", Authenticated: true},
-	{Name: "ListRepositories", Method: MethodGet, Route: APIPrefix + "/repositories", Request: "ListRepositoriesRequest", Response: "ListRepositoriesResponse", Authenticated: true},
-	{Name: "GetRepository", Method: MethodGet, Route: APIPrefix + "/repositories/{repository}", Request: "GetRepositoryRequest", Response: "GetRepositoryResponse", Authenticated: true},
-	{Name: "ListOrganisations", Method: MethodGet, Route: APIPrefix + "/organisations", Request: "ListOrganisationsRequest", Response: "ListOrganisationsResponse", Authenticated: true},
-	{Name: "GetOrganisation", Method: MethodGet, Route: APIPrefix + "/organisations/{organisation}", Request: "GetOrganisationRequest", Response: "GetOrganisationResponse", Authenticated: true},
-	{Name: "GetAgentSettings", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-settings", Request: "GetAgentSettingsRequest", Response: "GetAgentSettingsResponse", Authenticated: true},
-	{Name: "ListAgentRuns", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-runs", Request: "ListAgentRunsRequest", Response: "ListAgentRunsResponse", Authenticated: true},
-	{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/sandboxes", Request: "ListSandboxesRequest", Response: "ListSandboxesResponse", Authenticated: true},
-	{Name: "CancelAgentRun", Method: MethodPost, Route: APIPrefix + "/agent-runs/{run}/cancel", Request: "CancelAgentRunRequest", Response: "CancelAgentRunResponse", Authenticated: true},
-	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/activity", Request: "AgentActivityRequest", Response: "AgentActivityResponse", Authenticated: true},
-	{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/output", Request: "RunOutputRequest", Response: "RunOutputResponse", Authenticated: true},
-	{Name: "Health", Method: MethodGet, Route: APIPrefix + "/health", Response: "HealthResponse"},
-	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse"},
-	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "AddRepositoryResponse", Authenticated: true},
-	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}", Request: "GetAgentRunRequest", Response: "GetAgentRunResponse", Authenticated: true},
-	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", Authenticated: true},
-	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", Authenticated: true},
-	{Name: "RunEpic", Method: MethodPost, Route: APIPrefix + "/runs/epic", Request: "RunEpicRequest", Response: "RunEpicResponse", Authenticated: true},
-	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", Authenticated: true},
-	{Name: "OpenPullRequests", Method: MethodGet, Route: APIPrefix + "/open-pull-requests", Request: "OpenPullRequestsRequest", Response: "OpenPullRequestsResponse", Authenticated: true},
-	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/pull-requests/{pull_request}/transition", Request: "TransitionPullRequestRequest", Response: "TransitionPullRequestResponse", Authenticated: true},
-	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", Authenticated: true},
-	{Name: "Purge", Method: MethodPost, Route: APIPrefix + "/purge", Request: "PurgeRequest", Response: "PurgeResponse", Authenticated: true},
-	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Request: "ReadDaemonLogRequest", Response: "ReadDaemonLogResponse", Authenticated: true},
+	{Name: "Process", Method: MethodGet, Route: routeProcess, Response: "ProcessResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListProjects", Method: MethodGet, Route: APIPrefix + "/projects", Response: "ListProjectsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreateProject", Method: MethodPost, Route: APIPrefix + "/projects", Request: "CreateProjectRequest", Response: "CreateProjectResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "OpenProject", Method: MethodPost, Route: APIPrefix + "/projects/{project}/open", Request: "OpenProjectRequest", Response: "OpenProjectResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ForgetProject", Method: MethodDelete, Route: APIPrefix + "/projects/{project}", Request: "ForgetProjectRequest", Response: "ForgetProjectResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ProjectSummaries", Method: MethodGet, Route: APIPrefix + "/projects/{project}/summaries", Request: "ProjectSummariesRequest", Response: "ProjectSummariesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetSetup", Method: MethodGet, Route: APIPrefix + "/projects/{project}/setup", Request: "GetSetupRequest", Response: "GetSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "SaveSetup", Method: MethodPut, Route: APIPrefix + "/projects/{project}/setup", Request: "SaveSetupRequest", Response: "SaveSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics", Request: "ListEpicsRequest", Response: "ListEpicsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}", Request: "GetEpicRequest", Response: "GetEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics", Request: "CreateEpicRequest", Response: "CreateEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "PrefixEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/prefix", Request: "PrefixEpicRequest", Response: "PrefixEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "TransitionEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/transition", Request: "TransitionEpicRequest", Response: "TransitionEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CloseEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/close", Request: "CloseEpicRequest", Response: "CloseEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListIssues", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues", Request: "ListIssuesRequest", Response: "ListIssuesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetIssue", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}", Request: "GetIssueRequest", Response: "GetIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreateIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues", Request: "CreateIssueRequest", Response: "CreateIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "UpdateIssue", Method: MethodPut, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}", Request: "UpdateIssueRequest", Response: "UpdateIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "TransitionIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/transition", Request: "TransitionIssueRequest", Response: "TransitionIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CloseIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/close", Request: "CloseIssueRequest", Response: "CloseIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListPullRequests", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/pull-requests", Request: "ListPullRequestsRequest", Response: "ListPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreatePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/pull-requests", Request: "CreatePullRequestRequest", Response: "CreatePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CommentPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/comments", Request: "CommentPullRequestRequest", Response: "CommentPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "MergePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/merge", Request: "MergePullRequestRequest", Response: "MergePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ClosePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/close", Request: "ClosePullRequestRequest", Response: "ClosePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ResetPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/reset", Request: "ResetPullRequestRequest", Response: "ResetPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GrantPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/grant", Request: "GrantPullRequestRequest", Response: "GrantPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "PullRequestDiff", Method: MethodGet, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/diff", Request: "PullRequestDiffRequest", Response: "PullRequestDiffResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListRepositories", Method: MethodGet, Route: APIPrefix + "/repositories", Request: "ListRepositoriesRequest", Response: "ListRepositoriesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetRepository", Method: MethodGet, Route: APIPrefix + "/repositories/{repository}", Request: "GetRepositoryRequest", Response: "GetRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListOrganisations", Method: MethodGet, Route: APIPrefix + "/organisations", Request: "ListOrganisationsRequest", Response: "ListOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetOrganisation", Method: MethodGet, Route: APIPrefix + "/organisations/{organisation}", Request: "GetOrganisationRequest", Response: "GetOrganisationResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetAgentSettings", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-settings", Request: "GetAgentSettingsRequest", Response: "GetAgentSettingsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListAgentRuns", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-runs", Request: "ListAgentRunsRequest", Response: "ListAgentRunsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/sandboxes", Request: "ListSandboxesRequest", Response: "ListSandboxesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CancelAgentRun", Method: MethodPost, Route: APIPrefix + "/agent-runs/{run}/cancel", Request: "CancelAgentRunRequest", Response: "CancelAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/activity", Request: "AgentActivityRequest", Response: "AgentActivityResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/output", Request: "RunOutputRequest", Response: "RunOutputResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "Health", Method: MethodGet, Route: APIPrefix + "/health", Response: "HealthResponse", SuccessStatus: http.StatusOK},
+	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK},
+	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "AddRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}", Request: "GetAgentRunRequest", Response: "GetAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "RunEpic", Method: MethodPost, Route: APIPrefix + "/runs/epic", Request: "RunEpicRequest", Response: "RunEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "OpenPullRequests", Method: MethodGet, Route: APIPrefix + "/open-pull-requests", Request: "OpenPullRequestsRequest", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/pull-requests/{pull_request}/transition", Request: "TransitionPullRequestRequest", Response: "TransitionPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "Purge", Method: MethodPost, Route: APIPrefix + "/purge", Request: "PurgeRequest", Response: "PurgeResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Query: "ReadDaemonLogQuery", Request: "ReadDaemonLogRequest", Response: "ReadDaemonLogResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 }
 
 // ContractOperations returns a copy so callers cannot mutate the package's
@@ -866,8 +869,8 @@ func ValidateContract() error {
 	}
 	seen := make(map[string]struct{}, len(Contract))
 	for _, operation := range Contract {
-		if operation.Name == "" || operation.Route == "" || operation.Method == "" || operation.Response == "" {
-			return fmt.Errorf("netomatic: incomplete contract row %#v", operation)
+		if err := validateOperation(operation); err != nil {
+			return err
 		}
 		if _, ok := seen[operation.Name]; ok {
 			return fmt.Errorf("netomatic: duplicate operation %q", operation.Name)
@@ -876,6 +879,16 @@ func ValidateContract() error {
 		if !strings.HasPrefix(operation.Route, APIPrefix+"/") {
 			return fmt.Errorf("netomatic: unversioned route %q", operation.Route)
 		}
+	}
+	return nil
+}
+
+func validateOperation(operation Operation) error {
+	if operation.Name == "" || operation.Route == "" || operation.Method == "" {
+		return fmt.Errorf("netomatic: incomplete contract row %#v", operation)
+	}
+	if operation.SuccessStatus < http.StatusOK || operation.SuccessStatus >= http.StatusMultipleChoices {
+		return fmt.Errorf("netomatic: invalid success status %d for %q", operation.SuccessStatus, operation.Name)
 	}
 	return nil
 }
