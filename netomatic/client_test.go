@@ -252,6 +252,38 @@ func TestHTTPClientMaintenanceFeaturesReturnUnavailable(t *testing.T) {
 	}
 }
 
+func TestHTTPClientMaintenanceFeaturesRejectSuccess(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		call func(context.Context, *HTTPClient) error
+	}{
+		{"reconcile", APIPrefix + "/projects/42/maintenance/reconcile", func(ctx context.Context, c *HTTPClient) error {
+			return c.ReconcileSandboxes(ctx, ProjectPath{ProjectID: 42})
+		}},
+		{"purge", APIPrefix + "/projects/42/maintenance/purge", func(ctx context.Context, c *HTTPClient) error {
+			return c.PurgeFinishedWork(ctx, ProjectPath{ProjectID: 42})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.EscapedPath() != test.path {
+					t.Errorf("request = %s %s", r.Method, r.URL.EscapedPath())
+				}
+				w.WriteHeader(http.StatusNoContent)
+			}))
+			defer server.Close()
+			client, err := NewHTTPClient(server.URL, "token")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := test.call(context.Background(), client); !errors.Is(err, ErrUnexpectedStatus) {
+				t.Fatalf("error = %v, want ErrUnexpectedStatus", err)
+			}
+		})
+	}
+}
+
 func callContractOperationParts(client any, operation Operation, path any, query url.Values, request any) (any, error) {
 	ctx := context.Background()
 	method := reflect.ValueOf(client).MethodByName(operation.Name)

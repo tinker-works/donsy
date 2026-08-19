@@ -108,7 +108,10 @@ func (c *HTTPClient) do(ctx context.Context, method HTTPMethod, route string, au
 	if httpResponse.StatusCode < http.StatusOK || httpResponse.StatusCode >= http.StatusMultipleChoices {
 		return decodeAPIError(httpResponse.StatusCode, payload)
 	}
-	if expectedStatus != 0 && httpResponse.StatusCode != expectedStatus {
+	if expectedStatus == 0 {
+		return fmt.Errorf("%w: got %d, want no successful status", ErrUnexpectedStatus, httpResponse.StatusCode)
+	}
+	if httpResponse.StatusCode != expectedStatus {
 		return fmt.Errorf("%w: got %d, want %d", ErrUnexpectedStatus, httpResponse.StatusCode, expectedStatus)
 	}
 	if response == nil {
