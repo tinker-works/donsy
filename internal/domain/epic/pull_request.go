@@ -155,6 +155,9 @@ func (value *PullRequest) Grant(reviewer owner.Owner) error {
 	granted.Reviewers = append([]owner.Owner(nil), value.Reviewers...)
 	for _, existing := range granted.Reviewers {
 		if existing.ID != "" && existing.ID == reviewer.ID || existing.Login == reviewer.Login {
+			if err := granted.Validate(); err != nil {
+				return err
+			}
 			return nil
 		}
 	}
