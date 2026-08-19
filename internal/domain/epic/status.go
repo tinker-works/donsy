@@ -44,19 +44,52 @@ func (value Status) Terminal() bool {
 	return value == StatusDone || value == StatusMerged || value == StatusClosed
 }
 
-func validateStatus(value Status) error {
+func validEpicStatus(value Status) bool {
+	switch value {
+	case StatusDraft, StatusOpen, StatusInProgress, StatusDone, StatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+func validIssueStatus(value Status) bool {
+	switch value {
+	case StatusOpen, StatusInProgress, StatusDone, StatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+func validPullRequestStatus(value Status) bool {
+	switch value {
+	case StatusOpen, StatusApproved, StatusMerged, StatusClosed:
+		return true
+	default:
+		return false
+	}
+}
+
+func validateAggregateStatus(value Status, valid func(Status) bool, aggregate string) error {
 	if !value.Valid() {
 		return fmt.Errorf("unknown status %q", value)
+	}
+	if !valid(value) {
+		return fmt.Errorf("%s does not support status %q", aggregate, value)
 	}
 	return nil
 }
 
-func transition(current, next Status, terminal bool) error {
-	if err := validateStatus(next); err != nil {
+func transition(current, next Status, valid func(Status) bool, aggregate string, terminal bool) error {
+	if err := validateAggregateStatus(next, valid, aggregate); err != nil {
 		return err
 	}
 	if current == "" {
 		return fmt.Errorf("current status is empty")
+	}
+	if err := validateAggregateStatus(current, valid, aggregate); err != nil {
+		return err
 	}
 	if terminal || current.Terminal() {
 		return fmt.Errorf("cannot transition terminal status %s", current)

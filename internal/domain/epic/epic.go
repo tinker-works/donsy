@@ -46,7 +46,7 @@ func (value Epic) Validate() error {
 			return errors.New("epic prefix cannot contain whitespace")
 		}
 	}
-	if err := validateStatus(value.Status); err != nil {
+	if err := validateAggregateStatus(value.Status, validEpicStatus, "epic"); err != nil {
 		return fmt.Errorf("epic: %w", err)
 	}
 	for index, issue := range value.Issues {
@@ -75,7 +75,7 @@ func (value *Epic) Transition(to Status) error {
 	if value == nil {
 		return errors.New("epic is nil")
 	}
-	if err := transition(value.Status, to, false); err != nil {
+	if err := transition(value.Status, to, validEpicStatus, "epic", false); err != nil {
 		return err
 	}
 	value.Status = to

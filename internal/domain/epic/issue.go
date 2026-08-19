@@ -38,7 +38,7 @@ func (value Issue) Validate() error {
 	if strings.TrimSpace(value.Title) == "" {
 		return errors.New("issue title cannot be empty")
 	}
-	if err := validateStatus(value.Status); err != nil {
+	if err := validateAggregateStatus(value.Status, validIssueStatus, "issue"); err != nil {
 		return fmt.Errorf("issue: %w", err)
 	}
 	if value.Number < 0 {
@@ -63,7 +63,7 @@ func (value *Issue) Transition(to Status) error {
 	if value == nil {
 		return errors.New("issue is nil")
 	}
-	if err := transition(value.Status, to, false); err != nil {
+	if err := transition(value.Status, to, validIssueStatus, "issue", false); err != nil {
 		return err
 	}
 	value.Status = to

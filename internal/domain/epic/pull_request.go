@@ -58,7 +58,7 @@ func (value PullRequest) Validate() error {
 	if strings.TrimSpace(value.Title) == "" {
 		return errors.New("pull request title cannot be empty")
 	}
-	if err := validateStatus(value.Status); err != nil {
+	if err := validateAggregateStatus(value.Status, validPullRequestStatus, "pull request"); err != nil {
 		return fmt.Errorf("pull request: %w", err)
 	}
 	if value.Number < 0 {
@@ -78,7 +78,7 @@ func (value *PullRequest) Transition(to Status) error {
 	if value == nil {
 		return errors.New("pull request is nil")
 	}
-	if err := transition(value.Status, to, value.Status == StatusMerged); err != nil {
+	if err := transition(value.Status, to, validPullRequestStatus, "pull request", value.Status == StatusMerged); err != nil {
 		return err
 	}
 	value.Status = to

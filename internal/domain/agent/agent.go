@@ -178,6 +178,7 @@ func (value *Run) Transition(to Status) error {
 	if value.Status == StatusRunning && to == StatusPending {
 		return fmt.Errorf("cannot transition agent run from %s to %s", value.Status, to)
 	}
+	transitioned := *value
 	finishedAt := value.FinishedAt
 	if to.Terminal() {
 		if finishedAt.IsZero() {
@@ -187,8 +188,12 @@ func (value *Run) Transition(to Status) error {
 			return err
 		}
 	}
-	value.Status = to
-	value.FinishedAt = finishedAt
+	transitioned.Status = to
+	transitioned.FinishedAt = finishedAt
+	if err := transitioned.Validate(); err != nil {
+		return err
+	}
+	*value = transitioned
 	return nil
 }
 
@@ -216,10 +221,15 @@ func (value *Run) Complete(at time.Time) error {
 	if err := value.validateFinishedAt(at); err != nil {
 		return err
 	}
-	if err := value.Transition(StatusCompleted); err != nil {
+	completed := *value
+	if err := completed.Transition(StatusCompleted); err != nil {
 		return err
 	}
-	value.FinishedAt = at
+	completed.FinishedAt = at
+	if err := completed.Validate(); err != nil {
+		return err
+	}
+	*value = completed
 	return nil
 }
 
@@ -233,11 +243,16 @@ func (value *Run) Fail(message string, at time.Time) error {
 	if err := value.validateFinishedAt(at); err != nil {
 		return err
 	}
-	if err := value.Transition(StatusFailed); err != nil {
+	failed := *value
+	if err := failed.Transition(StatusFailed); err != nil {
 		return err
 	}
-	value.Error = message
-	value.FinishedAt = at
+	failed.Error = message
+	failed.FinishedAt = at
+	if err := failed.Validate(); err != nil {
+		return err
+	}
+	*value = failed
 	return nil
 }
 
