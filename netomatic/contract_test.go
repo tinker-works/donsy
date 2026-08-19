@@ -220,10 +220,16 @@ var contractDTOs = map[string]any{
 	"TransitionIssueResponse": contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"CloseIssueRequest":       CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
 	"CloseIssueResponse":      contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"CreatePullRequestRequest": CreatePullRequestRequest{
-		IssueID: "issue-1", Title: "Implement issue", Repository: "origin", Head: "feature/issue-1", Base: "main",
+	"CreatePullRequestRequest": contractFixture{
+		value: CreatePullRequestRequest{
+			IssueID: "issue-1", Title: "Implement issue", Repository: "origin", Head: "feature/issue-1", Base: "main",
+		},
+		json: `{"issueId":"issue-1","title":"Implement issue","repository":"origin","head":"feature/issue-1","base":"main"}`,
 	},
-	"TransitionPullRequestRequest": TransitionPullRequestRequest{Status: "closed"},
+	"TransitionPullRequestRequest": contractFixture{
+		value: TransitionPullRequestRequest{Status: "closed"},
+		json:  `{"status":"closed"}`,
+	},
 	"MergePullRequestResponse": contractFixture{
 		value: MergePullRequestResponse{Outcome: MergeOutcomeMerged},
 		json:  `{"outcome":"merged"}`,

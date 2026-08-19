@@ -106,7 +106,7 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 
 			var wantBody []byte
 			if operation.Request != "" && operation.Method != MethodGet {
-				wantBody, err = contractFixtureJSON(request)
+				wantBody, err = contractFixtureJSON(contractDTOs[operation.Request])
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -246,6 +246,52 @@ func TestHTTPClientAgentUnavailableFeaturesDecode501(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPClientPullRequestUnavailableFeaturesDecode501(t *testing.T) {
+	var requestPath string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPath = r.URL.EscapedPath()
+		w.WriteHeader(http.StatusNotImplemented)
+		_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"pull-request feature is unavailable"}`)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	path := MergePullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"}
+	for _, test := range []struct {
+		name     string
+		wantPath string
+		call     func() error
+	}{
+		{name: "reset issue", wantPath: APIPrefix + "/projects/7/epics/epic-1/pull-requests/pr-1/reset", call: func() error {
+			return client.ResetIssue(context.Background(), ResetIssuePath(path))
+		}},
+		{name: "open pull requests", wantPath: APIPrefix + "/projects/7/epics/epic-1/open-pull-requests", call: func() error {
+			_, err := client.OpenPullRequests(context.Background(), OpenPullRequestsPath{ProjectID: path.ProjectID, EpicID: path.EpicID})
+			return err
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			requestPath = ""
+			err := test.call()
+			if requestPath != test.wantPath {
+				t.Fatalf("path = %q, want %q", requestPath, test.wantPath)
+			}
+			var apiError *APIError
+			if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != "pull-request feature is unavailable" {
+				t.Fatalf("error = %#v, want feature_not_configured 501", err)
+			}
+			if !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("error = %v, want ErrUnavailable", err)
+			}
+		})
+	}
+}
+
 func callContractOperationParts(client any, operation Operation, path any, query url.Values, request any) (any, error) {
 	ctx := context.Background()
 	method := reflect.ValueOf(client).MethodByName(operation.Name)
@@ -352,7 +398,7 @@ func contractTestQuery(operation Operation) url.Values {
 
 func contractTestRequest(operation Operation) any {
 	if operation.Request != "" {
-		return contractDTOs[operation.Request]
+		return contractFixtureValue(contractDTOs[operation.Request])
 	}
 	return nil
 }
