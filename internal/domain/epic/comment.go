@@ -55,11 +55,17 @@ func (value *Comment) Edit(body string, at ...time.Time) error {
 	if strings.TrimSpace(body) == "" {
 		return errors.New("comment body cannot be empty")
 	}
-	value.Body = body
+	updatedAt := time.Now()
 	if len(at) > 0 {
-		value.UpdatedAt = at[0]
-	} else {
-		value.UpdatedAt = time.Now()
+		updatedAt = at[0]
 	}
-	return value.Validate()
+	updated := *value
+	updated.Body = body
+	updated.UpdatedAt = updatedAt
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	value.Body = body
+	value.UpdatedAt = updatedAt
+	return nil
 }
