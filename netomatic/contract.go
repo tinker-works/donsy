@@ -194,57 +194,37 @@ type Setup struct {
 }
 
 type Epic struct {
-	ID             string
-	Title          string
-	Assignee       string
-	Repositories   []string
-	Body           string
-	State          string
-	BranchPrefix   string
-	Issues         []Issue
-	PullRequests   []PullRequest
-	DraftingPasses int
+	ID          string  `json:"id"`
+	Prefix      string  `json:"prefix,omitempty"`
+	Title       string  `json:"title"`
+	Description string  `json:"description,omitempty"`
+	Status      string  `json:"status"`
+	Issues      []Issue `json:"issues,omitempty"`
 }
 
 type Issue struct {
-	ID         string
-	Title      string
-	ParentID   string
-	Repository string
-	State      string
-	CreatedAt  string
-	Body       string
-	Comments   []Comment
-	BlockedBy  []string
+	ID          string `json:"id"`
+	EpicID      string `json:"epic_id,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	Status      string `json:"status"`
 }
 
 type PullRequest struct {
-	ID            string
-	IssueID       string
-	Title         string
-	Status        string
-	Repository    string
-	Number        int
-	URL           string
-	Head          string
-	Base          string
-	Flags         []string
-	ReviewedHead  string
-	ReviewedBase  string
-	Rounds        int
-	Reviews       int
-	RoundsGranted int
-	CodingRounds  int
-	Approved      bool
-	CreatedAt     string
-	Comments      []Comment
+	ID          string `json:"id"`
+	Number      int    `json:"number,omitempty"`
+	Title       string `json:"title"`
+	Description string `json:"description,omitempty"`
+	URL         string `json:"url,omitempty"`
+	Branch      string `json:"branch,omitempty"`
+	Status      string `json:"status"`
 }
 
 type Comment struct {
-	ID        string
-	Author    string
-	CreatedAt string
-	Body      string
+	ID        string `json:"id"`
+	Author    string `json:"author"`
+	Body      string `json:"body"`
+	CreatedAt string `json:"created_at,omitempty"`
 }
 
 type Repository struct {
