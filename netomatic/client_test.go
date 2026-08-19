@@ -565,6 +565,44 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 	})
 }
 
+func TestHTTPClientRunEpicAgentReturnsUnavailable(t *testing.T) {
+	var requestBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("method = %q, want %q", r.Method, http.MethodPost)
+		}
+		if r.URL.EscapedPath() != APIPrefix+"/projects/42/epics/epic%2Fone/agent-runs" {
+			t.Errorf("path = %q, want numeric epic agent path", r.URL.EscapedPath())
+		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
+		}
+		requestBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusNotImplemented)
+		_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"manual epic agent execution is not configured for this process"}`)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = client.RunEpicAgent(context.Background(), EpicPath{ProjectID: 42, EpicID: "epic/one"})
+	if len(requestBody) != 0 {
+		t.Fatalf("request body = %s, want empty", requestBody)
+	}
+	var apiError *APIError
+	if !errors.As(err, &apiError) {
+		t.Fatalf("error = %v, want APIError", err)
+	}
+	if apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != "manual epic agent execution is not configured for this process" {
+		t.Fatalf("API error = %#v, want manual-agent unavailable error", apiError)
+	}
+	if !errors.Is(err, ErrUnavailable) {
+		t.Fatalf("error = %v, want ErrUnavailable", err)
+	}
+}
+
 type contractPathFixture struct {
 	Project string
 }
