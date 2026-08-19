@@ -82,3 +82,18 @@ func TestRunTransitionRejectsGeneratedFinishBeforeStart(t *testing.T) {
 		t.Fatalf("Transition() mutated the run on error: got %#v, want %#v", value, want)
 	}
 }
+
+func TestRunTransitionRejectsRestoredFinishBeforeStart(t *testing.T) {
+	value := NewRun("agent", "project", "issue")
+	value.Status = StatusRunning
+	value.StartedAt = time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
+	value.FinishedAt = value.StartedAt.Add(-time.Minute)
+	want := value
+
+	if err := value.Transition(StatusCancelled); err == nil {
+		t.Fatal("Transition() accepted a restored finish time before the start")
+	}
+	if value != want {
+		t.Fatalf("Transition() mutated the run on error: got %#v, want %#v", value, want)
+	}
+}

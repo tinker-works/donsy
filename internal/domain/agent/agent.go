@@ -179,8 +179,10 @@ func (value *Run) Transition(to Status) error {
 		return fmt.Errorf("cannot transition agent run from %s to %s", value.Status, to)
 	}
 	finishedAt := value.FinishedAt
-	if to.Terminal() && value.FinishedAt.IsZero() {
-		finishedAt = time.Now()
+	if to.Terminal() {
+		if finishedAt.IsZero() {
+			finishedAt = time.Now()
+		}
 		if err := value.validateFinishedAt(finishedAt); err != nil {
 			return err
 		}
