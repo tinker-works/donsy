@@ -46,17 +46,17 @@ func (value Project) Validate() error {
 	if value.Name.IsZero() || !value.Name.Valid() {
 		return errors.New("project name is not a valid slug")
 	}
-	if value.Owner.Login != "" || !value.Owner.ID.IsZero() {
+	if value.Owner != (owner.Owner{}) {
 		if err := value.Owner.Validate(); err != nil {
 			return err
 		}
 	}
-	if value.Organisation.Login != "" || !value.Organisation.ID.IsZero() {
+	if value.Organisation != (organisation.Organisation{}) {
 		if err := value.Organisation.Validate(); err != nil {
 			return err
 		}
 	}
-	if value.Setup.Name != "" {
+	if value.Setup != (setup.Setup{}) {
 		if err := value.Setup.Validate(); err != nil {
 			return err
 		}
@@ -92,15 +92,21 @@ func (value *Project) AddRepository(item repository.Repository) error {
 	return nil
 }
 
-func (value *Project) RemoveRepository(name slug.Slug) bool {
+func (value *Project) RemoveRepository(name slug.Slug) (bool, error) {
 	if value == nil {
-		return false
+		return false, errors.New("project is nil")
 	}
 	for index, item := range value.Repositories {
 		if item.Name == name {
-			value.Repositories = append(value.Repositories[:index], value.Repositories[index+1:]...)
-			return true
+			updated := *value
+			updated.Repositories = append([]repository.Repository(nil), value.Repositories[:index]...)
+			updated.Repositories = append(updated.Repositories, value.Repositories[index+1:]...)
+			if err := updated.Validate(); err != nil {
+				return false, err
+			}
+			*value = updated
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }

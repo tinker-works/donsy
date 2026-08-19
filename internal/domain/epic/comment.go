@@ -57,6 +57,9 @@ func (value *Comment) Edit(body string, at ...time.Time) error {
 	if value == nil {
 		return errors.New("comment is nil")
 	}
+	if err := value.Validate(); err != nil {
+		return err
+	}
 	if strings.TrimSpace(body) == "" {
 		return errors.New("comment body cannot be empty")
 	}

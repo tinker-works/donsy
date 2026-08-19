@@ -127,15 +127,21 @@ func (value *Epic) AddIssue(issue Issue) error {
 	return nil
 }
 
-func (value *Epic) RemoveIssue(issueID id.ID) bool {
+func (value *Epic) RemoveIssue(issueID id.ID) (bool, error) {
 	if value == nil {
-		return false
+		return false, errors.New("epic is nil")
 	}
 	for index, issue := range value.Issues {
 		if issue.ID == issueID {
-			value.Issues = append(value.Issues[:index], value.Issues[index+1:]...)
-			return true
+			updated := *value
+			updated.Issues = append([]Issue(nil), value.Issues[:index]...)
+			updated.Issues = append(updated.Issues, value.Issues[index+1:]...)
+			if err := updated.Validate(); err != nil {
+				return false, err
+			}
+			*value = updated
+			return true, nil
 		}
 	}
-	return false
+	return false, nil
 }

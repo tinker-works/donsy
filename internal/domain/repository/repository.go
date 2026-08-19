@@ -62,7 +62,7 @@ func (value Repository) Validate() error {
 	if value.DefaultBranch == "-" || strings.ContainsAny(value.DefaultBranch, "\r\n") {
 		return errors.New("repository default branch is invalid")
 	}
-	if !value.Owner.ID.IsZero() || value.Owner.Login != "" {
+	if value.Owner != (owner.Owner{}) {
 		if err := value.Owner.Validate(); err != nil {
 			return err
 		}

@@ -100,3 +100,34 @@ func TestEpicSetPrefixRejectsInvalidRestoredIssue(t *testing.T) {
 		t.Fatalf("SetPrefix() mutated the epic on error: got %#v, want %#v", value, want)
 	}
 }
+
+func TestEpicRemoveIssueRejectsInvalidRestoredIssue(t *testing.T) {
+	value, err := NewEpic("Migration")
+	if err != nil {
+		t.Fatalf("NewEpic() error = %v", err)
+	}
+	first, err := NewIssue("Move the model")
+	if err != nil {
+		t.Fatalf("NewIssue() error = %v", err)
+	}
+	second, err := NewIssue("Validate the model")
+	if err != nil {
+		t.Fatalf("NewIssue() error = %v", err)
+	}
+	if err := value.AddIssue(first); err != nil {
+		t.Fatalf("AddIssue() error = %v", err)
+	}
+	if err := value.AddIssue(second); err != nil {
+		t.Fatalf("AddIssue() error = %v", err)
+	}
+	value.Issues[1].Title = ""
+	want := value
+
+	removed, err := value.RemoveIssue(first.ID)
+	if err == nil || removed {
+		t.Fatal("RemoveIssue() accepted an epic with an invalid restored issue")
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("RemoveIssue() mutated the epic on error: got %#v, want %#v", value, want)
+	}
+}

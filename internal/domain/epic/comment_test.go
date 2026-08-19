@@ -1,6 +1,7 @@
 package epic
 
 import (
+	"reflect"
 	"testing"
 	"time"
 
@@ -19,6 +20,23 @@ func TestCommentEdit(t *testing.T) {
 	}
 	if comment.Body != "updated" {
 		t.Fatalf("Edit() body = %q", comment.Body)
+	}
+}
+
+func TestCommentEditRejectsInvalidRestoredChronology(t *testing.T) {
+	created := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
+	comment, err := NewComment("alice", "first", created)
+	if err != nil {
+		t.Fatalf("NewComment() error = %v", err)
+	}
+	comment.UpdatedAt = created.Add(-time.Minute)
+	want := comment
+
+	if err := comment.Edit("updated", created.Add(time.Minute)); err == nil {
+		t.Fatal("Edit() accepted a comment with invalid restored chronology")
+	}
+	if !reflect.DeepEqual(comment, want) {
+		t.Fatalf("Edit() mutated the comment on error: got %#v, want %#v", comment, want)
 	}
 }
 
