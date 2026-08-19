@@ -64,6 +64,12 @@ func (value PullRequest) Validate() error {
 	if value.Number < 0 {
 		return errors.New("pull request number cannot be negative")
 	}
+	if !value.MergedAt.IsZero() && value.MergedAt.Before(value.CreatedAt) {
+		return errors.New("pull request merged before it was created")
+	}
+	if !value.ClosedAt.IsZero() && value.ClosedAt.Before(value.CreatedAt) {
+		return errors.New("pull request closed before it was created")
+	}
 	for index, comment := range value.Comments {
 		if err := comment.Validate(); err != nil {
 			return fmt.Errorf("comment %d: %w", index, err)
@@ -82,6 +88,9 @@ func (value PullRequest) Valid() bool { return value.Validate() == nil }
 func (value *PullRequest) Transition(to Status) error {
 	if value == nil {
 		return errors.New("pull request is nil")
+	}
+	if err := value.Validate(); err != nil {
+		return err
 	}
 	if err := transition(value.Status, to, validPullRequestStatus, "pull request", value.Status == StatusMerged); err != nil {
 		return err

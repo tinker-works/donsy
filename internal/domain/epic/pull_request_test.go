@@ -3,6 +3,7 @@ package epic
 import (
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/tinker-works/donsy/internal/domain/id"
 	"github.com/tinker-works/donsy/internal/domain/owner"
@@ -47,6 +48,68 @@ func TestPullRequestTransitionRejectsInvalidRestoredComment(t *testing.T) {
 	}
 	if !reflect.DeepEqual(value, want) {
 		t.Fatalf("Transition() mutated the pull request on error: got %#v, want %#v", value, want)
+	}
+}
+
+func TestPullRequestTransitionRejectsInvalidTimestamps(t *testing.T) {
+	tests := []struct {
+		name  string
+		to    Status
+		value func(t *testing.T) PullRequest
+	}{
+		{
+			name: "future creation when closing",
+			to:   StatusClosed,
+			value: func(t *testing.T) PullRequest {
+				t.Helper()
+				value, err := NewPullRequest("Improve validation")
+				if err != nil {
+					t.Fatalf("NewPullRequest() error = %v", err)
+				}
+				value.CreatedAt = time.Now().Add(time.Hour)
+				return value
+			},
+		},
+		{
+			name: "restored merged time",
+			to:   StatusMerged,
+			value: func(t *testing.T) PullRequest {
+				t.Helper()
+				value, err := NewPullRequest("Improve validation")
+				if err != nil {
+					t.Fatalf("NewPullRequest() error = %v", err)
+				}
+				value.MergedAt = value.CreatedAt.Add(-time.Second)
+				return value
+			},
+		},
+		{
+			name: "restored closed time",
+			to:   StatusClosed,
+			value: func(t *testing.T) PullRequest {
+				t.Helper()
+				value, err := NewPullRequest("Improve validation")
+				if err != nil {
+					t.Fatalf("NewPullRequest() error = %v", err)
+				}
+				value.ClosedAt = value.CreatedAt.Add(-time.Second)
+				return value
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := test.value(t)
+			want := value
+
+			if err := value.Transition(test.to); err == nil {
+				t.Fatal("Transition() accepted invalid lifecycle timestamps")
+			}
+			if !reflect.DeepEqual(value, want) {
+				t.Fatalf("Transition() mutated the pull request on error: got %#v, want %#v", value, want)
+			}
+		})
 	}
 }
 

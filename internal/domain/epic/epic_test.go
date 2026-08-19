@@ -3,6 +3,7 @@ package epic
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestEpicOwnsIssues(t *testing.T) {
@@ -48,6 +49,52 @@ func TestEpicTransitionRejectsInvalidRestoredIssue(t *testing.T) {
 	}
 	if !reflect.DeepEqual(value, want) {
 		t.Fatalf("Transition() mutated the epic on error: got %#v, want %#v", value, want)
+	}
+}
+
+func TestEpicTransitionRejectsInvalidTimestamps(t *testing.T) {
+	tests := []struct {
+		name  string
+		value func(t *testing.T) Epic
+	}{
+		{
+			name: "future creation",
+			value: func(t *testing.T) Epic {
+				t.Helper()
+				value, err := NewEpic("Migration")
+				if err != nil {
+					t.Fatalf("NewEpic() error = %v", err)
+				}
+				value.CreatedAt = time.Now().Add(time.Hour)
+				return value
+			},
+		},
+		{
+			name: "restored closed time",
+			value: func(t *testing.T) Epic {
+				t.Helper()
+				value, err := NewEpic("Migration")
+				if err != nil {
+					t.Fatalf("NewEpic() error = %v", err)
+				}
+				value.ClosedAt = value.CreatedAt.Add(-time.Second)
+				return value
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := test.value(t)
+			want := value
+
+			if err := value.Close(); err == nil {
+				t.Fatal("Close() accepted invalid lifecycle timestamps")
+			}
+			if !reflect.DeepEqual(value, want) {
+				t.Fatalf("Close() mutated the epic on error: got %#v, want %#v", value, want)
+			}
+		})
 	}
 }
 

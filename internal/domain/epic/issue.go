@@ -44,6 +44,9 @@ func (value Issue) Validate() error {
 	if value.Number < 0 {
 		return errors.New("issue number cannot be negative")
 	}
+	if !value.ClosedAt.IsZero() && value.ClosedAt.Before(value.CreatedAt) {
+		return errors.New("issue closed before it was created")
+	}
 	for index, request := range value.PullRequests {
 		if err := request.Validate(); err != nil {
 			return fmt.Errorf("pull request %d: %w", index, err)
@@ -62,6 +65,9 @@ func (value Issue) Valid() bool { return value.Validate() == nil }
 func (value *Issue) Transition(to Status) error {
 	if value == nil {
 		return errors.New("issue is nil")
+	}
+	if err := value.Validate(); err != nil {
+		return err
 	}
 	if err := transition(value.Status, to, validIssueStatus, "issue", false); err != nil {
 		return err

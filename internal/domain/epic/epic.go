@@ -49,6 +49,9 @@ func (value Epic) Validate() error {
 	if err := validateAggregateStatus(value.Status, validEpicStatus, "epic"); err != nil {
 		return fmt.Errorf("epic: %w", err)
 	}
+	if !value.ClosedAt.IsZero() && value.ClosedAt.Before(value.CreatedAt) {
+		return errors.New("epic closed before it was created")
+	}
 	for index, issue := range value.Issues {
 		if err := issue.Validate(); err != nil {
 			return fmt.Errorf("issue %d: %w", index, err)
@@ -79,6 +82,9 @@ func (value *Epic) SetPrefix(prefix string) error {
 func (value *Epic) Transition(to Status) error {
 	if value == nil {
 		return errors.New("epic is nil")
+	}
+	if err := value.Validate(); err != nil {
+		return err
 	}
 	if err := transition(value.Status, to, validEpicStatus, "epic", false); err != nil {
 		return err
