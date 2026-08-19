@@ -353,44 +353,56 @@ func (c *HTTPClient) GetOrganisation(ctx context.Context, request GetOrganisatio
 	return response, err
 }
 
-func (c *HTTPClient) GetAgentSettings(ctx context.Context, request GetAgentSettingsRequest) (GetAgentSettingsResponse, error) {
-	var response GetAgentSettingsResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/agent-settings"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) GetAgentSettings(ctx context.Context, path GetAgentSettingsPath) (AgentSettings, error) {
+	var response AgentSettings
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/agent-settings"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) ListAgentRuns(ctx context.Context, request ListAgentRunsRequest) (ListAgentRunsResponse, error) {
+func (c *HTTPClient) SetAgentRole(ctx context.Context, path SetAgentRolePath, request SetAgentRoleRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/agent-settings/roles/" + escapePathSegment(path.Role)
+	return c.do(ctx, MethodPut, route, true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) ListAgentRuns(ctx context.Context, path ListAgentRunsPath) (ListAgentRunsResponse, error) {
 	var response ListAgentRunsResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/agent-runs"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/agent-runs"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) ListSandboxes(ctx context.Context, request ListSandboxesRequest) (ListSandboxesResponse, error) {
-	var response ListSandboxesResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/sandboxes", true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) GetAgentRun(ctx context.Context, path GetAgentRunPath) (AgentRun, error) {
+	var response AgentRun
+	route := APIPrefix + "/agent-runs/" + escapePathSegment(path.RunID)
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) CancelAgentRun(ctx context.Context, request CancelAgentRunRequest) (CancelAgentRunResponse, error) {
-	var response CancelAgentRunResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run) + "/cancel"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) RunOutput(ctx context.Context, path RunOutputPath, query RunOutputQuery) (RunOutputPage, error) {
+	var response RunOutputPage
+	route := APIPrefix + "/agent-runs/" + escapePathSegment(path.RunID) + "/output"
+	err := c.do(ctx, MethodGet, route, true, query, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) AgentActivity(ctx context.Context, request AgentActivityRequest) (AgentActivityResponse, error) {
+func (c *HTTPClient) AgentActivity(ctx context.Context, query AgentActivityQuery) (AgentActivityResponse, error) {
 	var response AgentActivityResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run) + "/activity"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	err := c.do(ctx, MethodGet, APIPrefix+"/agent-runs/activity", true, query, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) RunOutput(ctx context.Context, request RunOutputRequest) (RunOutputResponse, error) {
-	var response RunOutputResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run) + "/output"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) CancelAgentRun(ctx context.Context, path CancelAgentRunPath) (CancelAgentRunResponse, error) {
+	var response CancelAgentRunResponse
+	route := APIPrefix + "/agent-runs/" + escapePathSegment(path.RunID) + "/cancel"
+	err := c.do(ctx, MethodPost, route, true, nil, nil, &response, http.StatusOK)
+	return response, err
+}
+
+func (c *HTTPClient) ListSandboxes(ctx context.Context, path ListSandboxesPath) (ListSandboxesResponse, error) {
+	var response ListSandboxesResponse
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/sandboxes"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
@@ -403,13 +415,6 @@ func (c *HTTPClient) Capabilities(ctx context.Context) (CapabilitiesResponse, er
 func (c *HTTPClient) AddRepository(ctx context.Context, request AddRepositoryRequest) (AddRepositoryResponse, error) {
 	var response AddRepositoryResponse
 	err := c.do(ctx, MethodPost, APIPrefix+"/repositories", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) GetAgentRun(ctx context.Context, request GetAgentRunRequest) (GetAgentRunResponse, error) {
-	var response GetAgentRunResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
 	return response, err
 }
 
@@ -458,20 +463,6 @@ func (c *HTTPClient) ReconcileSandboxes(ctx context.Context, path ProjectPath) e
 func (c *HTTPClient) PurgeFinishedWork(ctx context.Context, path ProjectPath) error {
 	route := APIPrefix + "/projects/" + escapePathSegment(strconv.FormatUint(uint64(path.ProjectID), 10)) + "/maintenance/purge"
 	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
-}
-
-func (c *HTTPClient) ReadDaemonLog(ctx context.Context, offset int64, limit int) (ReadDaemonLogResponse, error) {
-	var response ReadDaemonLogResponse
-	request, err := BoundDaemonLogRequest(ReadDaemonLogRequest{Offset: offset, Limit: limit})
-	if err != nil {
-		return response, err
-	}
-	query := url.Values{
-		"offset": {strconv.FormatInt(request.Offset, 10)},
-		"limit":  {strconv.Itoa(request.Limit)},
-	}
-	err = c.do(ctx, MethodGet, APIPrefix+"/daemon-log", true, query, nil, &response, http.StatusOK)
-	return response, err
 }
 
 var _ Client = (*HTTPClient)(nil)
