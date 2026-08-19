@@ -287,13 +287,6 @@ type RunOutput struct {
 	Done   bool   `json:"done"`
 }
 
-type Diff struct {
-	FilesChanged int    `json:"files_changed,omitempty"`
-	Additions    int    `json:"additions,omitempty"`
-	Deletions    int    `json:"deletions,omitempty"`
-	Patch        string `json:"patch,omitempty"`
-}
-
 // ListProjectsResponse and the other response wrappers keep the wire shape
 // explicit. This avoids coupling clients to a server's choice of JSON array
 // representation and leaves room for pagination metadata later.
@@ -433,68 +426,87 @@ type CloseIssueRequest struct {
 type CloseIssueResponse struct {
 	Issue Issue `json:"issue"`
 }
-type ListPullRequestsRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-	Issue   string `json:"issue"`
-}
-type ListPullRequestsResponse struct {
-	PullRequests []PullRequest `json:"pull_requests"`
+type CreatePullRequestPath struct {
+	ProjectID uint
+	EpicID    string
 }
 type CreatePullRequestRequest struct {
-	Project     string `json:"project"`
-	Epic        string `json:"epic"`
-	Issue       string `json:"issue"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
-	Branch      string `json:"branch,omitempty"`
+	IssueID    string `json:"issueId"`
+	Title      string `json:"title"`
+	Repository string `json:"repository"`
+	Head       string `json:"head"`
+	Base       string `json:"base"`
 }
-type CreatePullRequestResponse struct {
-	PullRequest PullRequest `json:"pull_request"`
+
+type TransitionPullRequestPath struct {
+	ProjectID     uint
+	EpicID        string
+	PullRequestID string
 }
-type CommentPullRequestRequest struct {
-	Project     string `json:"project"`
-	PullRequest string `json:"pull_request"`
-	Body        string `json:"body"`
+type TransitionPullRequestRequest struct {
+	Status string `json:"status"`
 }
-type CommentPullRequestResponse struct {
-	Comment Comment `json:"comment"`
+
+type GrantCodingRoundPath struct {
+	ProjectID     uint
+	EpicID        string
+	PullRequestID string
 }
-type MergePullRequestRequest struct {
-	Project     string `json:"project"`
-	PullRequest string `json:"pull_request"`
+
+type MergePullRequestPath struct {
+	ProjectID     uint
+	EpicID        string
+	PullRequestID string
 }
+type MergeOutcome string
+
+const (
+	MergeOutcomeMerged           MergeOutcome = "merged"
+	MergeOutcomeReturnedToCoding MergeOutcome = "returned_to_coding"
+)
+
 type MergePullRequestResponse struct {
-	PullRequest PullRequest `json:"pull_request"`
+	Outcome MergeOutcome `json:"outcome"`
 }
-type ClosePullRequestRequest struct {
-	Project     string `json:"project"`
-	PullRequest string `json:"pull_request"`
+
+type ResetIssuePath struct {
+	ProjectID     uint
+	EpicID        string
+	PullRequestID string
 }
-type ClosePullRequestResponse struct {
-	PullRequest PullRequest `json:"pull_request"`
-}
-type ResetPullRequestRequest struct {
-	Project     string `json:"project"`
-	PullRequest string `json:"pull_request"`
-}
-type ResetPullRequestResponse struct {
-	PullRequest PullRequest `json:"pull_request"`
-}
-type GrantPullRequestRequest struct {
-	Project     string `json:"project"`
-	PullRequest string `json:"pull_request"`
-	Branch      string `json:"branch"`
-}
-type GrantPullRequestResponse struct {
-	PullRequest PullRequest `json:"pull_request"`
-}
-type PullRequestDiffRequest struct {
-	Project     string `json:"project"`
-	PullRequest string `json:"pull_request"`
+
+type GetPullRequestDiffPath struct {
+	ProjectID     uint
+	EpicID        string
+	PullRequestID string
 }
 type PullRequestDiffResponse struct {
-	Diff Diff `json:"diff"`
+	Diff string `json:"diff"`
+}
+
+type OpenPullRequestsPath struct {
+	ProjectID uint
+	EpicID    string
+}
+type OpenPullRequestsResponse struct {
+	Opened int `json:"opened"`
+}
+
+type AddCommentPath struct {
+	ProjectID uint
+	EpicID    string
+}
+type CommentTarget string
+
+const (
+	IssueCommentTarget       CommentTarget = "issue"
+	PullRequestCommentTarget CommentTarget = "pull_request"
+)
+
+type AddCommentRequest struct {
+	TargetID string        `json:"targetId"`
+	Target   CommentTarget `json:"target"`
+	Body     string        `json:"body"`
 }
 type ListRepositoriesRequest struct {
 	Organisation string `json:"organisation,omitempty"`
@@ -692,20 +704,6 @@ type RunIssueRequest struct {
 type RunIssueResponse struct {
 	Run AgentRun `json:"run"`
 }
-type OpenPullRequestsRequest struct {
-	Project string `json:"project"`
-}
-type OpenPullRequestsResponse struct {
-	PullRequests []PullRequest `json:"pull_requests"`
-}
-type TransitionPullRequestRequest struct {
-	Project     string `json:"project"`
-	PullRequest string `json:"pull_request"`
-	Status      string `json:"status"`
-}
-type TransitionPullRequestResponse struct {
-	PullRequest PullRequest `json:"pull_request"`
-}
 type ReconcileRequest struct {
 	Project string `json:"project,omitempty"`
 }
@@ -743,14 +741,14 @@ type Client interface {
 	UpdateIssue(context.Context, UpdateIssueRequest) (UpdateIssueResponse, error)
 	TransitionIssue(context.Context, TransitionIssueRequest) (TransitionIssueResponse, error)
 	CloseIssue(context.Context, CloseIssueRequest) (CloseIssueResponse, error)
-	ListPullRequests(context.Context, ListPullRequestsRequest) (ListPullRequestsResponse, error)
-	CreatePullRequest(context.Context, CreatePullRequestRequest) (CreatePullRequestResponse, error)
-	CommentPullRequest(context.Context, CommentPullRequestRequest) (CommentPullRequestResponse, error)
-	MergePullRequest(context.Context, MergePullRequestRequest) (MergePullRequestResponse, error)
-	ClosePullRequest(context.Context, ClosePullRequestRequest) (ClosePullRequestResponse, error)
-	ResetPullRequest(context.Context, ResetPullRequestRequest) (ResetPullRequestResponse, error)
-	GrantPullRequest(context.Context, GrantPullRequestRequest) (GrantPullRequestResponse, error)
-	PullRequestDiff(context.Context, PullRequestDiffRequest) (PullRequestDiffResponse, error)
+	CreatePullRequest(context.Context, CreatePullRequestPath, CreatePullRequestRequest) error
+	TransitionPullRequest(context.Context, TransitionPullRequestPath, TransitionPullRequestRequest) error
+	GrantCodingRound(context.Context, GrantCodingRoundPath) error
+	MergePullRequest(context.Context, MergePullRequestPath) (MergePullRequestResponse, error)
+	ResetIssue(context.Context, ResetIssuePath) error
+	GetPullRequestDiff(context.Context, GetPullRequestDiffPath) (PullRequestDiffResponse, error)
+	OpenPullRequests(context.Context, OpenPullRequestsPath) (OpenPullRequestsResponse, error)
+	AddComment(context.Context, AddCommentPath, AddCommentRequest) error
 	ListRepositories(context.Context, ListRepositoriesRequest) (ListRepositoriesResponse, error)
 	GetRepository(context.Context, GetRepositoryRequest) (GetRepositoryResponse, error)
 	ListOrganisations(context.Context, ListOrganisationsRequest) (ListOrganisationsResponse, error)
@@ -770,8 +768,6 @@ type Client interface {
 	ReviewApprovedBranches(context.Context, ReviewApprovedBranchesRequest) (ReviewApprovedBranchesResponse, error)
 	RunEpic(context.Context, RunEpicRequest) (RunEpicResponse, error)
 	RunIssue(context.Context, RunIssueRequest) (RunIssueResponse, error)
-	OpenPullRequests(context.Context, OpenPullRequestsRequest) (OpenPullRequestsResponse, error)
-	TransitionPullRequest(context.Context, TransitionPullRequestRequest) (TransitionPullRequestResponse, error)
 	Reconcile(context.Context, ReconcileRequest) (ReconcileResponse, error)
 	Purge(context.Context, PurgeRequest) (PurgeResponse, error)
 }
@@ -819,14 +815,14 @@ var Contract = []Operation{
 	{Name: "UpdateIssue", Method: MethodPut, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}", Request: "UpdateIssueRequest", Response: "UpdateIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "TransitionIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/transition", Request: "TransitionIssueRequest", Response: "TransitionIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "CloseIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/close", Request: "CloseIssueRequest", Response: "CloseIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ListPullRequests", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/pull-requests", Request: "ListPullRequestsRequest", Response: "ListPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CreatePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}/pull-requests", Request: "CreatePullRequestRequest", Response: "CreatePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CommentPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/comments", Request: "CommentPullRequestRequest", Response: "CommentPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "MergePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/merge", Request: "MergePullRequestRequest", Response: "MergePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ClosePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/close", Request: "ClosePullRequestRequest", Response: "ClosePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ResetPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/reset", Request: "ResetPullRequestRequest", Response: "ResetPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GrantPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/grant", Request: "GrantPullRequestRequest", Response: "GrantPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "PullRequestDiff", Method: MethodGet, Route: APIPrefix + "/projects/{project}/pull-requests/{pull_request}/diff", Request: "PullRequestDiffRequest", Response: "PullRequestDiffResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreatePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests", Path: "CreatePullRequestPath", Request: "CreatePullRequestRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/state-transitions", Path: "TransitionPullRequestPath", Request: "TransitionPullRequestRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "GrantCodingRound", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/coding-rounds", Path: "GrantCodingRoundPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "MergePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/merge", Path: "MergePullRequestPath", Response: "MergePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ResetIssue", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/reset", Path: "ResetIssuePath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "GetPullRequestDiff", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/diff", Path: "GetPullRequestDiffPath", Response: "PullRequestDiffResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "OpenPullRequests", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/open-pull-requests", Path: "OpenPullRequestsPath", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "AddComment", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/comments", Path: "AddCommentPath", Request: "AddCommentRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "ListRepositories", Method: MethodGet, Route: APIPrefix + "/repositories", Request: "ListRepositoriesRequest", Response: "ListRepositoriesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetRepository", Method: MethodGet, Route: APIPrefix + "/repositories/{repository}", Request: "GetRepositoryRequest", Response: "GetRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListOrganisations", Method: MethodGet, Route: APIPrefix + "/organisations", Request: "ListOrganisationsRequest", Response: "ListOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -844,8 +840,6 @@ var Contract = []Operation{
 	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunEpic", Method: MethodPost, Route: APIPrefix + "/runs/epic", Request: "RunEpicRequest", Response: "RunEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "OpenPullRequests", Method: MethodGet, Route: APIPrefix + "/open-pull-requests", Request: "OpenPullRequestsRequest", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/pull-requests/{pull_request}/transition", Request: "TransitionPullRequestRequest", Response: "TransitionPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Purge", Method: MethodPost, Route: APIPrefix + "/purge", Request: "PurgeRequest", Response: "PurgeResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Response: "ReadDaemonLogResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -863,7 +857,7 @@ func ContractOperations() []Operation {
 const ClientOperationCount = 38
 
 // DaemonOperationCount includes every row in Contract.
-const DaemonOperationCount = 50
+const DaemonOperationCount = 48
 
 // ValidateContract catches accidental omissions when a route is added to the
 // table without a corresponding public DTO or method declaration.

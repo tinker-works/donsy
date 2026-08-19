@@ -56,9 +56,12 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			query := contractTestQuery(operation)
 			request := contractTestRequest(operation)
 			response := contractFixtureValue(contractDTOs[operation.Response])
-			responseBody, err = contractFixtureJSON(contractDTOs[operation.Response])
-			if err != nil {
-				t.Fatal(err)
+			responseBody = nil
+			if operation.Response != "" {
+				responseBody, err = contractFixtureJSON(contractDTOs[operation.Response])
+				if err != nil {
+					t.Fatal(err)
+				}
 			}
 			requestBody = nil
 			requestMethod = ""
@@ -112,6 +115,65 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 				t.Errorf("request body = %s, want %s", requestBody, wantBody)
 			}
 		})
+	}
+}
+
+func TestHTTPClientPullRequestOutcomesAndCommentTargets(t *testing.T) {
+	var mergeCalls int
+	var commentBodies []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.EscapedPath() {
+		case APIPrefix + "/projects/7/epics/epic-1/pull-requests/pr-1/merge":
+			outcomes := []string{"merged", "returned_to_coding"}
+			if mergeCalls >= len(outcomes) {
+				t.Fatalf("unexpected merge call %d", mergeCalls+1)
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = io.WriteString(w, `{"outcome":"`+outcomes[mergeCalls]+`"}`)
+			mergeCalls++
+		case APIPrefix + "/projects/7/epics/epic-1/comments":
+			body, err := io.ReadAll(r.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			commentBodies = append(commentBodies, string(body))
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected path %q", r.URL.EscapedPath())
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := MergePullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"}
+	for _, want := range []MergeOutcome{MergeOutcomeMerged, MergeOutcomeReturnedToCoding} {
+		response, err := client.MergePullRequest(context.Background(), path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if response.Outcome != want {
+			t.Fatalf("outcome = %q, want %q", response.Outcome, want)
+		}
+	}
+
+	commentPath := AddCommentPath{ProjectID: 7, EpicID: "epic-1"}
+	for _, target := range []CommentTarget{IssueCommentTarget, PullRequestCommentTarget} {
+		err := client.AddComment(context.Background(), commentPath, AddCommentRequest{
+			TargetID: "target-1", Target: target, Body: "Please review",
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	wantBodies := []string{
+		`{"targetId":"target-1","target":"issue","body":"Please review"}`,
+		`{"targetId":"target-1","target":"pull_request","body":"Please review"}`,
+	}
+	if !reflect.DeepEqual(commentBodies, wantBodies) {
+		t.Fatalf("comment bodies = %v, want %v", commentBodies, wantBodies)
 	}
 }
 
@@ -191,9 +253,21 @@ func contractTestRoute(operation Operation, request any) string {
 		"name":          "Name",
 	} {
 		field := value.FieldByName(fieldName)
-		if field.IsValid() && field.Kind() == reflect.String {
-			route = strings.Replace(route, "{"+placeholder+"}", url.PathEscape(field.String()), 1)
+		if !field.IsValid() {
+			continue
 		}
+		var segment string
+		switch field.Kind() {
+		case reflect.String:
+			segment = url.PathEscape(field.String())
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			segment = strconv.FormatUint(field.Uint(), 10)
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			segment = strconv.FormatInt(field.Int(), 10)
+		default:
+			continue
+		}
+		route = strings.Replace(route, "{"+placeholder+"}", segment, 1)
 	}
 	return route
 }

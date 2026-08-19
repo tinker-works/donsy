@@ -271,60 +271,50 @@ func (c *HTTPClient) CloseIssue(ctx context.Context, request CloseIssueRequest) 
 	return response, err
 }
 
-func (c *HTTPClient) ListPullRequests(ctx context.Context, request ListPullRequestsRequest) (ListPullRequestsResponse, error) {
-	var response ListPullRequestsResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue) + "/pull-requests"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) CreatePullRequest(ctx context.Context, path CreatePullRequestPath, request CreatePullRequestRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/pull-requests"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) CreatePullRequest(ctx context.Context, request CreatePullRequestRequest) (CreatePullRequestResponse, error) {
-	var response CreatePullRequestResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue) + "/pull-requests"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) TransitionPullRequest(ctx context.Context, path TransitionPullRequestPath, request TransitionPullRequestRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/pull-requests/" + escapePathSegment(path.PullRequestID) + "/state-transitions"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) CommentPullRequest(ctx context.Context, request CommentPullRequestRequest) (CommentPullRequestResponse, error) {
-	var response CommentPullRequestResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/pull-requests/" + escapePathSegment(request.PullRequest) + "/comments"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) GrantCodingRound(ctx context.Context, path GrantCodingRoundPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/pull-requests/" + escapePathSegment(path.PullRequestID) + "/coding-rounds"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) MergePullRequest(ctx context.Context, request MergePullRequestRequest) (MergePullRequestResponse, error) {
+func (c *HTTPClient) MergePullRequest(ctx context.Context, path MergePullRequestPath) (MergePullRequestResponse, error) {
 	var response MergePullRequestResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/pull-requests/" + escapePathSegment(request.PullRequest) + "/merge"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/pull-requests/" + escapePathSegment(path.PullRequestID) + "/merge"
+	err := c.do(ctx, MethodPost, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) ClosePullRequest(ctx context.Context, request ClosePullRequestRequest) (ClosePullRequestResponse, error) {
-	var response ClosePullRequestResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/pull-requests/" + escapePathSegment(request.PullRequest) + "/close"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) ResetIssue(ctx context.Context, path ResetIssuePath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/pull-requests/" + escapePathSegment(path.PullRequestID) + "/reset"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) ResetPullRequest(ctx context.Context, request ResetPullRequestRequest) (ResetPullRequestResponse, error) {
-	var response ResetPullRequestResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/pull-requests/" + escapePathSegment(request.PullRequest) + "/reset"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) GrantPullRequest(ctx context.Context, request GrantPullRequestRequest) (GrantPullRequestResponse, error) {
-	var response GrantPullRequestResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/pull-requests/" + escapePathSegment(request.PullRequest) + "/grant"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) PullRequestDiff(ctx context.Context, request PullRequestDiffRequest) (PullRequestDiffResponse, error) {
+func (c *HTTPClient) GetPullRequestDiff(ctx context.Context, path GetPullRequestDiffPath) (PullRequestDiffResponse, error) {
 	var response PullRequestDiffResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/pull-requests/" + escapePathSegment(request.PullRequest) + "/diff"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/pull-requests/" + escapePathSegment(path.PullRequestID) + "/diff"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
+}
+
+func (c *HTTPClient) OpenPullRequests(ctx context.Context, path OpenPullRequestsPath) (OpenPullRequestsResponse, error) {
+	var response OpenPullRequestsResponse
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/open-pull-requests"
+	err := c.do(ctx, MethodPost, route, true, nil, nil, &response, http.StatusOK)
+	return response, err
+}
+
+func (c *HTTPClient) AddComment(ctx context.Context, path AddCommentPath, request AddCommentRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/comments"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
 func (c *HTTPClient) ListRepositories(ctx context.Context, request ListRepositoriesRequest) (ListRepositoriesResponse, error) {
@@ -434,19 +424,6 @@ func (c *HTTPClient) RunEpic(ctx context.Context, request RunEpicRequest) (RunEp
 func (c *HTTPClient) RunIssue(ctx context.Context, request RunIssueRequest) (RunIssueResponse, error) {
 	var response RunIssueResponse
 	err := c.do(ctx, MethodPost, APIPrefix+"/runs/issue", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) OpenPullRequests(ctx context.Context, request OpenPullRequestsRequest) (OpenPullRequestsResponse, error) {
-	var response OpenPullRequestsResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/open-pull-requests", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) TransitionPullRequest(ctx context.Context, request TransitionPullRequestRequest) (TransitionPullRequestResponse, error) {
-	var response TransitionPullRequestResponse
-	route := APIPrefix + "/pull-requests/" + escapePathSegment(request.PullRequest) + "/transition"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
 	return response, err
 }
 

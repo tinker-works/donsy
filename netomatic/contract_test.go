@@ -14,8 +14,8 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+12 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+12)
+	if len(Contract) != ClientOperationCount+10 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+10)
 	}
 	if Contract[ClientOperationCount-1].Name != "RunOutput" {
 		t.Fatalf("last client operation = %q, want RunOutput", Contract[ClientOperationCount-1].Name)
@@ -216,31 +216,30 @@ var contractDTOs = map[string]any{
 	"UpdateIssueRequest": UpdateIssueRequest{
 		Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Updated issue", Description: "Updated details",
 	},
-	"UpdateIssueResponse":      contractObjectFixture(UpdateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"TransitionIssueRequest":   TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
-	"TransitionIssueResponse":  contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"CloseIssueRequest":        CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"CloseIssueResponse":       contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"ListPullRequestsRequest":  ListPullRequestsRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"ListPullRequestsResponse": contractListFixture(ListPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
+	"UpdateIssueResponse":     contractObjectFixture(UpdateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"TransitionIssueRequest":  TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
+	"TransitionIssueResponse": contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"CloseIssueRequest":       CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
+	"CloseIssueResponse":      contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"CreatePullRequestRequest": CreatePullRequestRequest{
-		Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Implement issue", Description: "The implementation", Branch: "feature/issue-1",
+		IssueID: "issue-1", Title: "Implement issue", Repository: "origin", Head: "feature/issue-1", Base: "main",
 	},
-	"CreatePullRequestResponse":  contractObjectFixture(CreatePullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"CommentPullRequestRequest":  CommentPullRequestRequest{Project: "demo", PullRequest: "pr-1", Body: "Please review"},
-	"CommentPullRequestResponse": contractObjectFixture(CommentPullRequestResponse{Comment: contractComment}, "comment", commentFixtureJSON),
-	"MergePullRequestRequest":    MergePullRequestRequest{Project: "demo", PullRequest: "pr-1"},
-	"MergePullRequestResponse":   contractObjectFixture(MergePullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"ClosePullRequestRequest":    ClosePullRequestRequest{Project: "demo", PullRequest: "pr-1"},
-	"ClosePullRequestResponse":   contractObjectFixture(ClosePullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"ResetPullRequestRequest":    ResetPullRequestRequest{Project: "demo", PullRequest: "pr-1"},
-	"ResetPullRequestResponse":   contractObjectFixture(ResetPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"GrantPullRequestRequest":    GrantPullRequestRequest{Project: "demo", PullRequest: "pr-1", Branch: "feature/issue-1"},
-	"GrantPullRequestResponse":   contractObjectFixture(GrantPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"PullRequestDiffRequest":     PullRequestDiffRequest{Project: "demo", PullRequest: "pr-1"},
-	"PullRequestDiffResponse": PullRequestDiffResponse{Diff: Diff{
-		FilesChanged: 2, Additions: 10, Deletions: 3, Patch: "@@ -1 +1 @@\n-old\n+new\n",
-	}},
+	"TransitionPullRequestRequest": TransitionPullRequestRequest{Status: "closed"},
+	"MergePullRequestResponse": contractFixture{
+		value: MergePullRequestResponse{Outcome: MergeOutcomeMerged},
+		json:  `{"outcome":"merged"}`,
+	},
+	"PullRequestDiffResponse": contractFixture{
+		value: PullRequestDiffResponse{Diff: "@@ -1 +1 @@\n-old\n+new\n"},
+		json:  `{"diff":"@@ -1 +1 @@\n-old\n+new\n"}`,
+	},
+	"OpenPullRequestsResponse": contractFixture{
+		value: OpenPullRequestsResponse{Opened: 2},
+		json:  `{"opened":2}`,
+	},
+	"AddCommentRequest": AddCommentRequest{
+		TargetID: "issue-1", Target: IssueCommentTarget, Body: "Please review",
+	},
 	"ListRepositoriesRequest": ListRepositoriesRequest{Organisation: "acme"},
 	"ListRepositoriesResponse": ListRepositoriesResponse{Repositories: []Repository{{
 		ID: "repo-1", Name: "donsy", Owner: "acme", URL: "https://example.test/donsy", Default: "main",
@@ -317,15 +316,11 @@ var contractDTOs = map[string]any{
 	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
 		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
 	}},
-	"OpenPullRequestsRequest":       OpenPullRequestsRequest{Project: "demo"},
-	"OpenPullRequestsResponse":      contractListFixture(OpenPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
-	"TransitionPullRequestRequest":  TransitionPullRequestRequest{Project: "demo", PullRequest: "pr-1", Status: "approved"},
-	"TransitionPullRequestResponse": contractObjectFixture(TransitionPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"ReconcileRequest":              ReconcileRequest{Project: "demo"},
-	"ReconcileResponse":             ReconcileResponse{Reconciled: 4},
-	"PurgeRequest":                  PurgeRequest{Project: "demo"},
-	"PurgeResponse":                 PurgeResponse{Purged: 2},
-	"ReadDaemonLogRequest":          ReadDaemonLogRequest{Offset: 32, Limit: 4},
+	"ReconcileRequest":     ReconcileRequest{Project: "demo"},
+	"ReconcileResponse":    ReconcileResponse{Reconciled: 4},
+	"PurgeRequest":         PurgeRequest{Project: "demo"},
+	"PurgeResponse":        PurgeResponse{Purged: 2},
+	"ReadDaemonLogRequest": ReadDaemonLogRequest{Offset: 32, Limit: 4},
 	"ReadDaemonLogResponse": ReadDaemonLogResponse{
 		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
 	},
@@ -333,7 +328,15 @@ var contractDTOs = map[string]any{
 }
 
 var contractPathDTOs = map[string]any{
-	"ShapePath": contractPathFixture{Project: "demo/blue"},
+	"ShapePath":                 contractPathFixture{Project: "demo/blue"},
+	"CreatePullRequestPath":     CreatePullRequestPath{ProjectID: 7, EpicID: "epic-1"},
+	"TransitionPullRequestPath": TransitionPullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"GrantCodingRoundPath":      GrantCodingRoundPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"MergePullRequestPath":      MergePullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"ResetIssuePath":            ResetIssuePath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"GetPullRequestDiffPath":    GetPullRequestDiffPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"OpenPullRequestsPath":      OpenPullRequestsPath{ProjectID: 7, EpicID: "epic-1"},
+	"AddCommentPath":            AddCommentPath{ProjectID: 7, EpicID: "epic-1"},
 }
 
 var contractQueryDTOs = map[string]url.Values{
