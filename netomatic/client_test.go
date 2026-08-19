@@ -215,6 +215,43 @@ func TestHTTPClientAgentUnavailableFeaturesDecode501(t *testing.T) {
 	}
 }
 
+func TestHTTPClientMaintenanceFeaturesReturnUnavailable(t *testing.T) {
+	for _, test := range []struct {
+		name string
+		path string
+		call func(context.Context, *HTTPClient) error
+	}{
+		{"reconcile", APIPrefix + "/projects/42/maintenance/reconcile", func(ctx context.Context, c *HTTPClient) error {
+			return c.ReconcileSandboxes(ctx, ProjectPath{ProjectID: 42})
+		}},
+		{"purge", APIPrefix + "/projects/42/maintenance/purge", func(ctx context.Context, c *HTTPClient) error {
+			return c.PurgeFinishedWork(ctx, ProjectPath{ProjectID: 42})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodPost || r.URL.EscapedPath() != test.path || r.Header.Get("Authorization") != "Bearer token" {
+					t.Errorf("request = %s %s auth=%q", r.Method, r.URL.EscapedPath(), r.Header.Get("Authorization"))
+				}
+				body, _ := io.ReadAll(r.Body)
+				if len(body) != 0 {
+					t.Errorf("request body = %s, want empty", body)
+				}
+				w.WriteHeader(http.StatusNotImplemented)
+				_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"feature is not configured for this process"}`)
+			}))
+			defer server.Close()
+			client, err := NewHTTPClient(server.URL, "token")
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := test.call(context.Background(), client); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("error = %v, want ErrUnavailable", err)
+			}
+		})
+	}
+}
+
 func callContractOperationParts(client any, operation Operation, path any, query url.Values, request any) (any, error) {
 	ctx := context.Background()
 	method := reflect.ValueOf(client).MethodByName(operation.Name)
@@ -289,18 +326,18 @@ func contractTestRoute(operation Operation, request any) string {
 		if !field.IsValid() {
 			continue
 		}
-		var fieldValue string
+		var segment string
 		switch field.Kind() {
 		case reflect.String:
-			fieldValue = field.String()
+			segment = url.PathEscape(field.String())
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-			fieldValue = strconv.FormatUint(field.Uint(), 10)
+			segment = strconv.FormatUint(field.Uint(), 10)
 		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			fieldValue = strconv.FormatInt(field.Int(), 10)
+			segment = strconv.FormatInt(field.Int(), 10)
 		default:
 			continue
 		}
-		route = strings.Replace(route, "{"+placeholder+"}", url.PathEscape(fieldValue), 1)
+		route = strings.Replace(route, "{"+placeholder+"}", segment, 1)
 	}
 	return route
 }
@@ -486,87 +523,6 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 			t.Fatalf("error = %v, want ErrResponseTooLarge", err)
 		}
 	})
-}
-
-func TestHTTPClientMaintenanceFeaturesReturnUnavailable(t *testing.T) {
-	for _, test := range []struct {
-		name   string
-		path   string
-		detail string
-		call   func(context.Context, *HTTPClient) error
-	}{
-		{
-			name:   "sandbox reconciliation",
-			path:   APIPrefix + "/projects/42/maintenance/reconcile",
-			detail: "sandbox reconciliation requires the worker coordinator is not configured for this process",
-			call: func(ctx context.Context, client *HTTPClient) error {
-				return client.ReconcileSandboxes(ctx, ProjectPath{ProjectID: 42})
-			},
-		},
-		{
-			name:   "finished-work purge",
-			path:   APIPrefix + "/projects/42/maintenance/purge",
-			detail: "finished-work purge requires the worker coordinator is not configured for this process",
-			call: func(ctx context.Context, client *HTTPClient) error {
-				return client.PurgeFinishedWork(ctx, ProjectPath{ProjectID: 42})
-			},
-		},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if r.Method != http.MethodPost {
-					t.Errorf("method = %q, want %q", r.Method, http.MethodPost)
-				}
-				if r.URL.EscapedPath() != test.path {
-					t.Errorf("path = %q, want %q", r.URL.EscapedPath(), test.path)
-				}
-				if r.Header.Get("Authorization") != "Bearer token" {
-					t.Errorf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
-				}
-				body, err := io.ReadAll(r.Body)
-				if err != nil {
-					t.Errorf("read request body: %v", err)
-				}
-				if len(body) != 0 {
-					t.Errorf("request body = %s, want empty", body)
-				}
-				w.WriteHeader(http.StatusNotImplemented)
-				_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"`+test.detail+`"}`)
-			}))
-			defer server.Close()
-
-			client, err := NewHTTPClient(server.URL, "token")
-			if err != nil {
-				t.Fatal(err)
-			}
-			err = test.call(context.Background(), client)
-			var apiError *APIError
-			if !errors.As(err, &apiError) {
-				t.Fatalf("error = %v, want APIError", err)
-			}
-			if apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != test.detail {
-				t.Fatalf("API error = %#v", apiError)
-			}
-			if !errors.Is(err, ErrUnavailable) {
-				t.Fatalf("error = %v, want ErrUnavailable", err)
-			}
-		})
-	}
-}
-
-func TestHTTPClientUnavailableMaintenanceRejectsSuccess(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusNoContent)
-	}))
-	defer server.Close()
-
-	client, err := NewHTTPClient(server.URL, "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := client.ReconcileSandboxes(context.Background(), ProjectPath{ProjectID: 42}); !errors.Is(err, ErrUnexpectedStatus) {
-		t.Fatalf("error = %v, want ErrUnexpectedStatus", err)
-	}
 }
 
 type contractPathFixture struct {

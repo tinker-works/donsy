@@ -62,11 +62,11 @@ body.
 | ReconcileSandboxes | POST | `/api/v1/projects/{projectID}/maintenance/reconcile` | — | — |
 | PurgeFinishedWork | POST | `/api/v1/projects/{projectID}/maintenance/purge` | — | — |
 
+`RunOutput` accepts an optional non-negative `from` query value. `AgentActivity`
+uses repeated `runID` query values and returns the `sizes` map directly. Both
+operations send an empty query when no values are supplied.
+
 `ReconcileSandboxes` and `PurgeFinishedWork` are registered but currently
 unavailable until the worker coordinator is shared. Go Merge returns HTTP 501
 with `code: "feature_not_configured"` and the operation-specific `detail`; the
 client exposes this as `ErrUnavailable`.
-
-`RunOutput` accepts an optional non-negative `from` query value. `AgentActivity`
-uses repeated `runID` query values and returns the `sizes` map directly. Both
-operations send an empty query when no values are supplied.

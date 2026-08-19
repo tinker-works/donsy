@@ -695,8 +695,6 @@ type Client interface {
 // Operation describes one row in the daemon contract table. Path, Query, and
 // Request contain Go type names for the independently supplied path, query,
 // and JSON body values. Response is optional for error-only operations.
-// Unavailable marks an operation whose registered route currently has no
-// successful outcome and returns feature_not_configured instead.
 type Operation struct {
 	Name          string
 	Method        HTTPMethod

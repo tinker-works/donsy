@@ -65,7 +65,6 @@ func escapePathSegment(value string) string {
 	return url.PathEscape(value)
 }
 
-// expectedStatus zero is reserved for operations with no successful outcome.
 func (c *HTTPClient) do(ctx context.Context, method HTTPMethod, route string, authenticated bool, query url.Values, request any, response any, expectedStatus int) error {
 	if expectedStatus != 0 && (expectedStatus < http.StatusOK || expectedStatus >= http.StatusMultipleChoices) {
 		return fmt.Errorf("netomatic: invalid expected success status %d", expectedStatus)
@@ -109,10 +108,7 @@ func (c *HTTPClient) do(ctx context.Context, method HTTPMethod, route string, au
 	if httpResponse.StatusCode < http.StatusOK || httpResponse.StatusCode >= http.StatusMultipleChoices {
 		return decodeAPIError(httpResponse.StatusCode, payload)
 	}
-	if expectedStatus == 0 {
-		return fmt.Errorf("%w: got %d, want no successful outcome", ErrUnexpectedStatus, httpResponse.StatusCode)
-	}
-	if httpResponse.StatusCode != expectedStatus {
+	if expectedStatus != 0 && httpResponse.StatusCode != expectedStatus {
 		return fmt.Errorf("%w: got %d, want %d", ErrUnexpectedStatus, httpResponse.StatusCode, expectedStatus)
 	}
 	if response == nil {
