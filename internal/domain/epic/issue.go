@@ -97,7 +97,12 @@ func (value *Issue) AddPullRequest(request PullRequest) error {
 			return fmt.Errorf("pull request %d already belongs to issue", request.Number)
 		}
 	}
-	value.PullRequests = append(value.PullRequests, request)
+	updated := *value
+	updated.PullRequests = append(append([]PullRequest(nil), value.PullRequests...), request)
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	*value = updated
 	return nil
 }
 
@@ -108,6 +113,11 @@ func (value *Issue) AddComment(comment Comment) error {
 	if err := comment.Validate(); err != nil {
 		return err
 	}
-	value.Comments = append(value.Comments, comment)
+	updated := *value
+	updated.Comments = append(append([]Comment(nil), value.Comments...), comment)
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	*value = updated
 	return nil
 }

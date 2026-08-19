@@ -43,3 +43,57 @@ func TestIssueTransitionRejectsInvalidRestoredPullRequest(t *testing.T) {
 		t.Fatalf("Transition() mutated the issue on error: got %#v, want %#v", value, want)
 	}
 }
+
+func TestIssueAddPullRequestRejectsInvalidRestoredPullRequest(t *testing.T) {
+	value, err := NewIssue("Write tests")
+	if err != nil {
+		t.Fatalf("NewIssue() error = %v", err)
+	}
+	request, err := NewPullRequest("Review changes")
+	if err != nil {
+		t.Fatalf("NewPullRequest() error = %v", err)
+	}
+	if err := value.AddPullRequest(request); err != nil {
+		t.Fatalf("AddPullRequest() error = %v", err)
+	}
+	value.PullRequests[0].Title = ""
+	additional, err := NewPullRequest("Update review")
+	if err != nil {
+		t.Fatalf("NewPullRequest() error = %v", err)
+	}
+	want := value
+
+	if err := value.AddPullRequest(additional); err == nil {
+		t.Fatal("AddPullRequest() accepted an issue with an invalid restored pull request")
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("AddPullRequest() mutated the issue on error: got %#v, want %#v", value, want)
+	}
+}
+
+func TestIssueAddCommentRejectsInvalidRestoredComment(t *testing.T) {
+	value, err := NewIssue("Write tests")
+	if err != nil {
+		t.Fatalf("NewIssue() error = %v", err)
+	}
+	comment, err := NewComment("alice", "review")
+	if err != nil {
+		t.Fatalf("NewComment() error = %v", err)
+	}
+	if err := value.AddComment(comment); err != nil {
+		t.Fatalf("AddComment() error = %v", err)
+	}
+	value.Comments[0].Body = ""
+	additional, err := NewComment("bob", "follow-up")
+	if err != nil {
+		t.Fatalf("NewComment() error = %v", err)
+	}
+	want := value
+
+	if err := value.AddComment(additional); err == nil {
+		t.Fatal("AddComment() accepted an issue with an invalid restored comment")
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("AddComment() mutated the issue on error: got %#v, want %#v", value, want)
+	}
+}

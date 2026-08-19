@@ -83,7 +83,12 @@ func (value *Project) AddRepository(item repository.Repository) error {
 			return fmt.Errorf("repository %q already belongs to project", item.Name)
 		}
 	}
-	value.Repositories = append(value.Repositories, item)
+	updated := *value
+	updated.Repositories = append(append([]repository.Repository(nil), value.Repositories...), item)
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	*value = updated
 	return nil
 }
 

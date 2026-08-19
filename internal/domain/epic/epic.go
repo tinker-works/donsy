@@ -113,7 +113,12 @@ func (value *Epic) AddIssue(issue Issue) error {
 		}
 	}
 	issue.EpicID = value.ID
-	value.Issues = append(value.Issues, issue)
+	updated := *value
+	updated.Issues = append(append([]Issue(nil), value.Issues...), issue)
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	*value = updated
 	return nil
 }
 

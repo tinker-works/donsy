@@ -133,7 +133,12 @@ func (value *PullRequest) AddComment(comment Comment) error {
 	if err := comment.Validate(); err != nil {
 		return err
 	}
-	value.Comments = append(value.Comments, comment)
+	updated := *value
+	updated.Comments = append(append([]Comment(nil), value.Comments...), comment)
+	if err := updated.Validate(); err != nil {
+		return err
+	}
+	*value = updated
 	return nil
 }
 
