@@ -350,49 +350,30 @@ type SaveSetupRequest struct {
 type SaveSetupResponse struct {
 	Setup Setup `json:"setup"`
 }
-type ListEpicsRequest struct {
-	Project string `json:"project"`
+type ProjectPath struct {
+	ProjectID uint
 }
-type ListEpicsResponse struct {
-	Epics []Epic `json:"epics"`
+type EpicPath struct {
+	ProjectID uint
+	EpicID    string
 }
-type GetEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-}
-type GetEpicResponse struct {
-	Epic Epic `json:"epic"`
-}
+type ListEpicsResponse []Epic
 type CreateEpicRequest struct {
-	Project     string `json:"project"`
-	Title       string `json:"title"`
-	Description string `json:"description,omitempty"`
+	Title        string   `json:"title"`
+	Assignee     string   `json:"assignee"`
+	Body         string   `json:"body"`
+	Repositories []string `json:"repositories"`
+	BranchPrefix string   `json:"branchPrefix"`
 }
-type CreateEpicResponse struct {
-	Epic Epic `json:"epic"`
+type TransitionEpicStateRequest struct {
+	State string `json:"state"`
+	Force bool   `json:"force"`
 }
-type PrefixEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-	Prefix  string `json:"prefix"`
+type SetBranchPrefixRequest struct {
+	Prefix string `json:"prefix"`
 }
-type PrefixEpicResponse struct {
-	Epic Epic `json:"epic"`
-}
-type TransitionEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-	Status  string `json:"status"`
-}
-type TransitionEpicResponse struct {
-	Epic Epic `json:"epic"`
-}
-type CloseEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-}
-type CloseEpicResponse struct {
-	Epic Epic `json:"epic"`
+type CompleteEpicResponse struct {
+	Completed bool `json:"completed"`
 }
 type ListIssuesRequest struct {
 	Project string `json:"project"`
@@ -508,9 +489,6 @@ type PullRequestDiffRequest struct {
 type PullRequestDiffResponse struct {
 	Diff Diff `json:"diff"`
 }
-type ProjectPath struct {
-	ProjectID uint
-}
 type ListRepositoriesRequest struct {
 	Organisation string `json:"organisation,omitempty"`
 }
@@ -592,26 +570,6 @@ type AddRepositoryRequest struct {
 type AddRepositoryResponse struct {
 	Repository Repository `json:"repository"`
 }
-type CompleteRequest struct {
-	Project string `json:"project"`
-	Run     string `json:"run"`
-}
-type CompleteResponse struct {
-	Complete bool `json:"complete"`
-}
-type ReviewApprovedBranchesRequest struct {
-	Project string `json:"project"`
-}
-type ReviewApprovedBranchesResponse struct {
-	Branches []string `json:"branches"`
-}
-type RunEpicRequest struct {
-	Project string `json:"project"`
-	Epic    string `json:"epic"`
-}
-type RunEpicResponse struct {
-	Run AgentRun `json:"run"`
-}
 type RunIssueRequest struct {
 	Project string `json:"project"`
 	Epic    string `json:"epic"`
@@ -647,12 +605,15 @@ type Client interface {
 	ProjectSummaries(context.Context, ProjectSummariesRequest) (ProjectSummariesResponse, error)
 	GetSetup(context.Context, GetSetupRequest) (GetSetupResponse, error)
 	SaveSetup(context.Context, SaveSetupRequest) (SaveSetupResponse, error)
-	ListEpics(context.Context, ListEpicsRequest) (ListEpicsResponse, error)
-	GetEpic(context.Context, GetEpicRequest) (GetEpicResponse, error)
-	CreateEpic(context.Context, CreateEpicRequest) (CreateEpicResponse, error)
-	PrefixEpic(context.Context, PrefixEpicRequest) (PrefixEpicResponse, error)
-	TransitionEpic(context.Context, TransitionEpicRequest) (TransitionEpicResponse, error)
-	CloseEpic(context.Context, CloseEpicRequest) (CloseEpicResponse, error)
+	ListEpics(context.Context, ProjectPath) (ListEpicsResponse, error)
+	GetEpic(context.Context, EpicPath) (Epic, error)
+	CreateEpic(context.Context, ProjectPath, CreateEpicRequest) error
+	CloseEpic(context.Context, EpicPath) error
+	TransitionEpicState(context.Context, EpicPath, TransitionEpicStateRequest) error
+	SetBranchPrefix(context.Context, EpicPath, SetBranchPrefixRequest) error
+	CompleteEpic(context.Context, EpicPath) (CompleteEpicResponse, error)
+	ReviewApprovedBranches(context.Context, EpicPath) error
+	RunEpicAgent(context.Context, EpicPath) error
 	ListIssues(context.Context, ListIssuesRequest) (ListIssuesResponse, error)
 	GetIssue(context.Context, GetIssueRequest) (GetIssueResponse, error)
 	CreateIssue(context.Context, CreateIssueRequest) (CreateIssueResponse, error)
@@ -682,9 +643,6 @@ type Client interface {
 
 	Capabilities(context.Context) (CapabilitiesResponse, error)
 	AddRepository(context.Context, AddRepositoryRequest) (AddRepositoryResponse, error)
-	Complete(context.Context, CompleteRequest) (CompleteResponse, error)
-	ReviewApprovedBranches(context.Context, ReviewApprovedBranchesRequest) (ReviewApprovedBranchesResponse, error)
-	RunEpic(context.Context, RunEpicRequest) (RunEpicResponse, error)
 	RunIssue(context.Context, RunIssueRequest) (RunIssueResponse, error)
 	OpenPullRequests(context.Context, OpenPullRequestsRequest) (OpenPullRequestsResponse, error)
 	TransitionPullRequest(context.Context, TransitionPullRequestRequest) (TransitionPullRequestResponse, error)
@@ -712,7 +670,7 @@ const (
 	routeProcess = APIPrefix + "/process"
 )
 
-// Contract is the complete versioned route inventory. The first 39 rows are
+// Contract is the complete versioned route inventory. The first 42 rows are
 // the original TUI client operations; the remaining rows are daemon routes
 // needed by the host.
 var Contract = []Operation{
@@ -724,12 +682,15 @@ var Contract = []Operation{
 	{Name: "ProjectSummaries", Method: MethodGet, Route: APIPrefix + "/projects/{project}/summaries", Request: "ProjectSummariesRequest", Response: "ProjectSummariesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetSetup", Method: MethodGet, Route: APIPrefix + "/projects/{project}/setup", Request: "GetSetupRequest", Response: "GetSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "SaveSetup", Method: MethodPut, Route: APIPrefix + "/projects/{project}/setup", Request: "SaveSetupRequest", Response: "SaveSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics", Request: "ListEpicsRequest", Response: "ListEpicsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}", Request: "GetEpicRequest", Response: "GetEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics", Request: "CreateEpicRequest", Response: "CreateEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "PrefixEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/prefix", Request: "PrefixEpicRequest", Response: "PrefixEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "TransitionEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/transition", Request: "TransitionEpicRequest", Response: "TransitionEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CloseEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/close", Request: "CloseEpicRequest", Response: "CloseEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics", Path: "ProjectPath", Response: "ListEpicsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}", Path: "EpicPath", Response: "Epic", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics", Path: "ProjectPath", Request: "CreateEpicRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "CloseEpic", Method: MethodDelete, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}", Path: "EpicPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "TransitionEpicState", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/state-transitions", Path: "EpicPath", Request: "TransitionEpicStateRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "SetBranchPrefix", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/branch-prefix", Path: "EpicPath", Request: "SetBranchPrefixRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "CompleteEpic", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/complete", Path: "EpicPath", Response: "CompleteEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/review-approved-branches", Path: "EpicPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "RunEpicAgent", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/agent-runs", Path: "EpicPath", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListIssues", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues", Request: "ListIssuesRequest", Response: "ListIssuesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetIssue", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues/{issue}", Request: "GetIssueRequest", Response: "GetIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "CreateIssue", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics/{epic}/issues", Request: "CreateIssueRequest", Response: "CreateIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -758,9 +719,6 @@ var Contract = []Operation{
 	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "AddRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{runID}", Path: "GetAgentRunPath", Response: "AgentRun", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "RunEpic", Method: MethodPost, Route: APIPrefix + "/runs/epic", Request: "RunEpicRequest", Response: "RunEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "OpenPullRequests", Method: MethodGet, Route: APIPrefix + "/open-pull-requests", Request: "OpenPullRequestsRequest", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/pull-requests/{pull_request}/transition", Request: "TransitionPullRequestRequest", Response: "TransitionPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -775,8 +733,9 @@ func ContractOperations() []Operation {
 }
 
 // ClientOperationCount is the number of retained operations that originated
-// at the old TUI boundary. It intentionally excludes daemon-only routes.
-const ClientOperationCount = 39
+// at the old TUI boundary. It intentionally excludes daemon-only routes and
+// ReadDaemonLog.
+const ClientOperationCount = 42
 
 // DaemonOperationCount includes every row in Contract.
 const DaemonOperationCount = 50

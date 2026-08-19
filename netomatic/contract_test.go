@@ -13,8 +13,8 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+11 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+11)
+	if len(Contract) != ClientOperationCount+8 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+8)
 	}
 	if Contract[ClientOperationCount-1].Name != "ListSandboxes" {
 		t.Fatalf("last client operation = %q, want ListSandboxes", Contract[ClientOperationCount-1].Name)
@@ -196,24 +196,25 @@ var contractDTOs = map[string]any{
 	"SaveSetupResponse": SaveSetupResponse{Setup: Setup{
 		Project: "demo", Repository: "origin", Organisation: "acme", Agent: "coder", Variants: []string{"fast", "safe"}, Complete: true,
 	}},
-	"ListEpicsRequest":  ListEpicsRequest{Project: "demo"},
-	"ListEpicsResponse": contractListFixture(ListEpicsResponse{Epics: []Epic{contractEpic}}, "epics", epicFixtureJSON),
-	"GetEpicRequest":    GetEpicRequest{Project: "demo", Epic: "epic-1"},
-	"GetEpicResponse":   contractObjectFixture(GetEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"CreateEpicRequest": CreateEpicRequest{
-		Project: "demo", Title: "First epic", Description: "Plan the release",
+	"ListEpicsResponse": contractFixture{
+		value: ListEpicsResponse{contractEpic},
+		json:  `[` + epicFixtureJSON + `]`,
 	},
-	"CreateEpicResponse":     contractObjectFixture(CreateEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"PrefixEpicRequest":      PrefixEpicRequest{Project: "demo", Epic: "epic-1", Prefix: "EP-1"},
-	"PrefixEpicResponse":     contractObjectFixture(PrefixEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"TransitionEpicRequest":  TransitionEpicRequest{Project: "demo", Epic: "epic-1", Status: "in_progress"},
-	"TransitionEpicResponse": contractObjectFixture(TransitionEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"CloseEpicRequest":       CloseEpicRequest{Project: "demo", Epic: "epic-1"},
-	"CloseEpicResponse":      contractObjectFixture(CloseEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"ListIssuesRequest":      ListIssuesRequest{Project: "demo", Epic: "epic-1"},
-	"ListIssuesResponse":     contractListFixture(ListIssuesResponse{Issues: []Issue{contractIssue}}, "issues", issueFixtureJSON),
-	"GetIssueRequest":        GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"GetIssueResponse":       contractObjectFixture(GetIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"Epic": contractFixture{
+		value: contractEpic,
+		json:  epicFixtureJSON,
+	},
+	"CreateEpicRequest": CreateEpicRequest{
+		Title: "First epic", Assignee: "alice", Body: "Plan the release",
+		Repositories: []string{"origin", "secondary"}, BranchPrefix: "jira-123",
+	},
+	"TransitionEpicStateRequest": TransitionEpicStateRequest{State: "Review", Force: true},
+	"SetBranchPrefixRequest":     SetBranchPrefixRequest{Prefix: "EP-1"},
+	"CompleteEpicResponse":       CompleteEpicResponse{Completed: true},
+	"ListIssuesRequest":          ListIssuesRequest{Project: "demo", Epic: "epic-1"},
+	"ListIssuesResponse":         contractListFixture(ListIssuesResponse{Issues: []Issue{contractIssue}}, "issues", issueFixtureJSON),
+	"GetIssueRequest":            GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
+	"GetIssueResponse":           contractObjectFixture(GetIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"CreateIssueRequest": CreateIssueRequest{
 		Project: "demo", Epic: "epic-1", Title: "First issue", Description: "Implement it",
 	},
@@ -312,14 +313,6 @@ var contractDTOs = map[string]any{
 	"AddRepositoryResponse": AddRepositoryResponse{Repository: Repository{
 		ID: "repo-1", Name: "donsy", Owner: "acme", URL: "https://example.test/donsy", Default: "main",
 	}},
-	"CompleteRequest":                CompleteRequest{Project: "demo", Run: "run-1"},
-	"CompleteResponse":               CompleteResponse{Complete: true},
-	"ReviewApprovedBranchesRequest":  ReviewApprovedBranchesRequest{Project: "demo"},
-	"ReviewApprovedBranchesResponse": ReviewApprovedBranchesResponse{Branches: []string{"main", "release"}},
-	"RunEpicRequest":                 RunEpicRequest{Project: "demo", Epic: "epic-1"},
-	"RunEpicResponse": RunEpicResponse{Run: AgentRun{
-		ID: "run-1", ProjectID: 7, Role: "coding", Subject: AgentSubject{Kind: "epic", ID: "epic-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "queued", Round: 1, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z"),
-	}},
 	"RunIssueRequest": RunIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
 	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
 		ID: "run-1", ProjectID: 7, Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "queued", Round: 1, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z"),
@@ -334,6 +327,7 @@ var contractDTOs = map[string]any{
 var contractPathDTOs = map[string]any{
 	"ShapePath":            contractPathFixture{Project: "demo/blue"},
 	"ProjectPath":          ProjectPath{ProjectID: 42},
+	"EpicPath":             EpicPath{ProjectID: 42, EpicID: "epic/one"},
 	"GetAgentSettingsPath": GetAgentSettingsPath{ProjectID: 7},
 	"SetAgentRolePath":     SetAgentRolePath{ProjectID: 7, Role: "coding/reviewer"},
 	"ListAgentRunsPath":    ListAgentRunsPath{ProjectID: 7},
