@@ -39,6 +39,12 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 		requestAuthorization = r.Header.Get("Authorization")
 		requestBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/json")
+		if operation.Unavailable {
+			requestStatus = http.StatusNotImplemented
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"`+contractUnavailableDetail(operation)+`"}`)
+			return
+		}
 		requestStatus = operation.SuccessStatus
 		w.WriteHeader(operation.SuccessStatus)
 		_, _ = w.Write(responseBody)
@@ -69,11 +75,21 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			requestAuthorization = ""
 
 			got, err := callContractOperationParts(client, operation, path, query, request)
-			if err != nil {
-				t.Fatalf("%s(): %v", operation.Name, err)
-			}
-			if !reflect.DeepEqual(got, response) {
-				t.Fatalf("%s() response = %#v, want %#v", operation.Name, got, response)
+			if operation.Unavailable {
+				var apiError *APIError
+				if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != contractUnavailableDetail(operation) {
+					t.Fatalf("%s() error = %#v, want feature_not_configured 501", operation.Name, err)
+				}
+				if !errors.Is(err, ErrUnavailable) {
+					t.Fatalf("%s() error = %v, want ErrUnavailable", operation.Name, err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("%s(): %v", operation.Name, err)
+				}
+				if !reflect.DeepEqual(got, response) {
+					t.Fatalf("%s() response = %#v, want %#v", operation.Name, got, response)
+				}
 			}
 
 			if requestMethod != string(operation.Method) {
@@ -82,8 +98,12 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			if requestPath != contractTestRoute(operation, path) {
 				t.Errorf("path = %q, want %q", requestPath, contractTestRoute(operation, path))
 			}
-			if requestStatus != operation.SuccessStatus {
-				t.Errorf("status = %d, want %d", requestStatus, operation.SuccessStatus)
+			wantStatus := operation.SuccessStatus
+			if operation.Unavailable {
+				wantStatus = http.StatusNotImplemented
+			}
+			if requestStatus != wantStatus {
+				t.Errorf("status = %d, want %d", requestStatus, wantStatus)
 			}
 			if operation.Query != "" {
 				if requestQuery.Encode() != query.Encode() {
@@ -112,6 +132,17 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 				t.Errorf("request body = %s, want %s", requestBody, wantBody)
 			}
 		})
+	}
+}
+
+func contractUnavailableDetail(operation Operation) string {
+	switch operation.Name {
+	case "ReconcileSandboxes":
+		return "sandbox reconciliation requires the worker coordinator is not configured for this process"
+	case "PurgeFinishedWork":
+		return "finished-work purge requires the worker coordinator is not configured for this process"
+	default:
+		return "feature is not configured for this process"
 	}
 }
 
@@ -520,6 +551,21 @@ func TestHTTPClientMaintenanceFeaturesReturnUnavailable(t *testing.T) {
 				t.Fatalf("error = %v, want ErrUnavailable", err)
 			}
 		})
+	}
+}
+
+func TestHTTPClientUnavailableMaintenanceRejectsSuccess(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := client.ReconcileSandboxes(context.Background(), ProjectPath{ProjectID: 42}); !errors.Is(err, ErrUnexpectedStatus) {
+		t.Fatalf("error = %v, want ErrUnexpectedStatus", err)
 	}
 }
 

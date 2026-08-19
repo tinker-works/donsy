@@ -36,6 +36,16 @@ func TestOperationValidationAllowsNoContentRows(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
+	if err := validateOperation(Operation{
+		Name: "Unavailable", Method: MethodPost, Route: APIPrefix + "/items/{item}", Unavailable: true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateOperation(Operation{
+		Name: "Unavailable", Method: MethodPost, Route: APIPrefix + "/items/{item}", SuccessStatus: 204, Unavailable: true,
+	}); err == nil {
+		t.Fatal("unavailable operation accepted a success status")
+	}
 
 	for _, status := range []int{0, 199, 300, 500} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
