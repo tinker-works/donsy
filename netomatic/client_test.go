@@ -40,9 +40,9 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 
 	for _, operation = range Contract {
 		t.Run(operation.Name, func(t *testing.T) {
-			request := contractDTOs[operation.Request]
-			response := contractDTOs[operation.Response]
-			responseBody, err = json.Marshal(response)
+			request := contractFixtureValue(contractDTOs[operation.Request])
+			response := contractFixtureValue(contractDTOs[operation.Response])
+			responseBody, err = contractFixtureJSON(contractDTOs[operation.Response])
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -75,7 +75,7 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 
 			var wantBody []byte
 			if operation.Request != "" {
-				wantBody, err = json.Marshal(request)
+				wantBody, err = contractFixtureJSON(contractDTOs[operation.Request])
 				if err != nil {
 					t.Fatal(err)
 				}
