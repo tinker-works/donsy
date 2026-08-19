@@ -314,8 +314,7 @@ var contractPathDTOs = map[string]any{
 }
 
 var contractQueryDTOs = map[string]url.Values{
-	"ReadDaemonLogQuery": {"offset": {"32"}, "limit": {"4"}},
-	"ShapeQuery":         {"runID": {"run-1", "run-2"}, "from": {"12"}},
+	"ShapeQuery": {"runID": {"run-1", "run-2"}, "from": {"12"}},
 }
 
 func TestRepresentativeDTOJSON(t *testing.T) {

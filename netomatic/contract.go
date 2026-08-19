@@ -844,7 +844,7 @@ var Contract = []Operation{
 	{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/pull-requests/{pull_request}/transition", Request: "TransitionPullRequestRequest", Response: "TransitionPullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Purge", Method: MethodPost, Route: APIPrefix + "/purge", Request: "PurgeRequest", Response: "PurgeResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Query: "ReadDaemonLogQuery", Request: "ReadDaemonLogRequest", Response: "ReadDaemonLogResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Response: "ReadDaemonLogResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 }
 
 // ContractOperations returns a copy so callers cannot mutate the package's

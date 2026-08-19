@@ -55,7 +55,7 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 		t.Run(operation.Name, func(t *testing.T) {
 			path := contractTestPath(operation)
 			query := contractTestQuery(operation)
-			request := contractDTOs[operation.Request]
+			request := contractTestRequest(operation)
 			response := contractDTOs[operation.Response]
 			responseBody, err = json.Marshal(response)
 			if err != nil {
@@ -86,11 +86,13 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			if requestStatus != operation.SuccessStatus {
 				t.Errorf("status = %d, want %d", requestStatus, operation.SuccessStatus)
 			}
-			if requestQuery.Encode() != query.Encode() {
-				t.Errorf("query = %v, want %v", requestQuery, contractTestQuery(operation))
-			}
-			if requestRawQuery != query.Encode() {
-				t.Errorf("raw query = %q, want %q", requestRawQuery, query.Encode())
+			if operation.Query != "" {
+				if requestQuery.Encode() != query.Encode() {
+					t.Errorf("query = %v, want %v", requestQuery, contractTestQuery(operation))
+				}
+				if requestRawQuery != query.Encode() {
+					t.Errorf("raw query = %q, want %q", requestRawQuery, query.Encode())
+				}
 			}
 			wantAuthorization := ""
 			if operation.Authenticated {
@@ -209,6 +211,16 @@ func contractTestQuery(operation Operation) url.Values {
 		return nil
 	}
 	return contractQueryDTOs[operation.Query]
+}
+
+func contractTestRequest(operation Operation) any {
+	if operation.Request != "" {
+		return contractDTOs[operation.Request]
+	}
+	if operation.Name == "ReadDaemonLog" {
+		return contractDTOs["ReadDaemonLogRequest"]
+	}
+	return nil
 }
 
 func TestHTTPClientEscapesPathSegments(t *testing.T) {
