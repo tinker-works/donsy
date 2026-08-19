@@ -436,15 +436,23 @@ func TestContractHarnessSeparatesPathQueryAndBody(t *testing.T) {
 	if !reflect.DeepEqual(response, contractShapeResponse{OK: true}) {
 		t.Fatalf("response = %#v", response)
 	}
+	emptyQuery := url.Values{}
+	response, err = callContractOperationParts(shapeClient, queryOperation, nil, emptyQuery, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(response, contractShapeResponse{OK: true}) {
+		t.Fatalf("empty query response = %#v", response)
+	}
 
-	if len(requests) != 3 {
-		t.Fatalf("request count = %d, want 3", len(requests))
+	if len(requests) != 4 {
+		t.Fatalf("request count = %d, want 4", len(requests))
 	}
-	if requests[0].method != http.MethodPost || requests[1].method != http.MethodPost || requests[2].method != http.MethodGet {
-		t.Fatalf("methods = %q, %q, %q", requests[0].method, requests[1].method, requests[2].method)
+	if requests[0].method != http.MethodPost || requests[1].method != http.MethodPost || requests[2].method != http.MethodGet || requests[3].method != http.MethodGet {
+		t.Fatalf("methods = %q, %q, %q, %q", requests[0].method, requests[1].method, requests[2].method, requests[3].method)
 	}
-	if len(requests[0].body) != 0 || len(requests[2].body) != 0 {
-		t.Fatalf("path-only/query bodies = %q and %q, want empty", requests[0].body, requests[2].body)
+	if len(requests[0].body) != 0 || len(requests[2].body) != 0 || len(requests[3].body) != 0 {
+		t.Fatalf("path-only/query bodies = %q, %q, and %q, want empty", requests[0].body, requests[2].body, requests[3].body)
 	}
 	wantBody := `{"name":"new"}`
 	if string(requests[1].body) != wantBody {
@@ -455,6 +463,12 @@ func TestContractHarnessSeparatesPathQueryAndBody(t *testing.T) {
 	}
 	if requests[2].rawQuery != query.Encode() {
 		t.Fatalf("raw query = %q, want %q", requests[2].rawQuery, query.Encode())
+	}
+	if len(requests[3].query) != 0 {
+		t.Fatalf("empty query = %v, want empty", requests[3].query)
+	}
+	if requests[3].rawQuery != "" {
+		t.Fatalf("empty raw query = %q, want empty", requests[3].rawQuery)
 	}
 }
 
