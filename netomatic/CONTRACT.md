@@ -59,8 +59,6 @@ means that the operation has no request body.
 | RunIssue | POST | `/api/v1/runs/issue` | `RunIssueRequest` | `RunIssueResponse` |
 | OpenPullRequests | GET | `/api/v1/open-pull-requests` | `OpenPullRequestsRequest` | `OpenPullRequestsResponse` |
 | TransitionPullRequest | POST | `/api/v1/pull-requests/{pull_request}/transition` | `TransitionPullRequestRequest` | `TransitionPullRequestResponse` |
-| Reconcile | POST | `/api/v1/reconcile` | `ReconcileRequest` | `ReconcileResponse` |
-| Purge | POST | `/api/v1/purge` | `PurgeRequest` | `PurgeResponse` |
 | ReconcileSandboxes | POST | `/api/v1/projects/{projectID}/maintenance/reconcile` | — | — |
 | PurgeFinishedWork | POST | `/api/v1/projects/{projectID}/maintenance/purge` | — | — |
 

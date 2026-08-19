@@ -13,8 +13,8 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+10 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+10)
+	if len(Contract) != ClientOperationCount+8 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+8)
 	}
 	if Contract[ClientOperationCount-1].Name != "ListSandboxes" {
 		t.Fatalf("last client operation = %q, want ListSandboxes", Contract[ClientOperationCount-1].Name)
@@ -321,10 +321,6 @@ var contractDTOs = map[string]any{
 	"OpenPullRequestsResponse":      contractListFixture(OpenPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
 	"TransitionPullRequestRequest":  TransitionPullRequestRequest{Project: "demo", PullRequest: "pr-1", Status: "approved"},
 	"TransitionPullRequestResponse": contractObjectFixture(TransitionPullRequestResponse{PullRequest: contractPullRequest}, "pull_request", pullRequestFixtureJSON),
-	"ReconcileRequest":              ReconcileRequest{Project: "demo"},
-	"ReconcileResponse":             ReconcileResponse{Reconciled: 4},
-	"PurgeRequest":                  PurgeRequest{Project: "demo"},
-	"PurgeResponse":                 PurgeResponse{Purged: 2},
 	"ShapeBody":                     contractBodyFixture{Name: "new"},
 }
 

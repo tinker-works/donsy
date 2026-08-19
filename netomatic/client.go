@@ -451,18 +451,6 @@ func (c *HTTPClient) TransitionPullRequest(ctx context.Context, request Transiti
 	return response, err
 }
 
-func (c *HTTPClient) Reconcile(ctx context.Context, request ReconcileRequest) (ReconcileResponse, error) {
-	var response ReconcileResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/reconcile", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) Purge(ctx context.Context, request PurgeRequest) (PurgeResponse, error) {
-	var response PurgeResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/purge", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
 func (c *HTTPClient) ReconcileSandboxes(ctx context.Context, path ProjectPath) error {
 	route := APIPrefix + "/projects/" + escapePathSegment(strconv.FormatUint(uint64(path.ProjectID), 10)) + "/maintenance/reconcile"
 	return c.do(ctx, MethodPost, route, true, nil, nil, nil, 0)
