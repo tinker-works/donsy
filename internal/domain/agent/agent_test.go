@@ -35,6 +35,44 @@ func TestRunTransitions(t *testing.T) {
 	}
 }
 
+func TestRunCompleteUsesSuppliedFinishTime(t *testing.T) {
+	value := NewRun("agent", "project", "issue")
+	started := time.Date(2099, time.August, 19, 0, 0, 0, 0, time.UTC)
+	finished := started.Add(time.Minute)
+	if err := value.Start(started); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	if err := value.Complete(finished); err != nil {
+		t.Fatalf("Complete() error = %v", err)
+	}
+	if value.Status != StatusCompleted {
+		t.Fatalf("Complete() status = %q, want %q", value.Status, StatusCompleted)
+	}
+	if !value.FinishedAt.Equal(finished) {
+		t.Fatalf("Complete() finished at = %v, want %v", value.FinishedAt, finished)
+	}
+}
+
+func TestRunFailUsesSuppliedFinishTime(t *testing.T) {
+	value := NewRun("agent", "project", "issue")
+	started := time.Date(2099, time.August, 19, 0, 0, 0, 0, time.UTC)
+	finished := started.Add(time.Minute)
+	if err := value.Start(started); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+
+	if err := value.Fail("failed", finished); err != nil {
+		t.Fatalf("Fail() error = %v", err)
+	}
+	if value.Status != StatusFailed {
+		t.Fatalf("Fail() status = %q, want %q", value.Status, StatusFailed)
+	}
+	if !value.FinishedAt.Equal(finished) {
+		t.Fatalf("Fail() finished at = %v, want %v", value.FinishedAt, finished)
+	}
+}
+
 func TestRunCompleteRejectsFinishBeforeStart(t *testing.T) {
 	value := NewRun("agent", "project", "issue")
 	started := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)

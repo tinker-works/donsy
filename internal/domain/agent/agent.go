@@ -222,10 +222,10 @@ func (value *Run) Complete(at time.Time) error {
 		return err
 	}
 	completed := *value
+	completed.FinishedAt = at
 	if err := completed.Transition(StatusCompleted); err != nil {
 		return err
 	}
-	completed.FinishedAt = at
 	if err := completed.Validate(); err != nil {
 		return err
 	}
@@ -244,11 +244,11 @@ func (value *Run) Fail(message string, at time.Time) error {
 		return err
 	}
 	failed := *value
+	failed.Error = message
+	failed.FinishedAt = at
 	if err := failed.Transition(StatusFailed); err != nil {
 		return err
 	}
-	failed.Error = message
-	failed.FinishedAt = at
 	if err := failed.Validate(); err != nil {
 		return err
 	}
