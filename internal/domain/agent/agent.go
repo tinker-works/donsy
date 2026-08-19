@@ -144,8 +144,8 @@ func (value Run) Validate() error {
 	if !value.Status.Valid() {
 		return fmt.Errorf("unknown agent run status %q", value.Status)
 	}
-	if value.FinishedAt.Before(value.StartedAt) && !value.FinishedAt.IsZero() {
-		return errors.New("agent run finished before it started")
+	if err := value.validateFinishedAt(value.FinishedAt); err != nil {
+		return err
 	}
 	if value.InputTokens < 0 || value.OutputTokens < 0 {
 		return errors.New("agent token usage cannot be negative")
@@ -154,6 +154,13 @@ func (value Run) Validate() error {
 }
 
 func (value Run) Valid() bool { return value.Validate() == nil }
+
+func (value Run) validateFinishedAt(at time.Time) error {
+	if at.Before(value.StartedAt) && !at.IsZero() {
+		return errors.New("agent run finished before it started")
+	}
+	return nil
+}
 
 func (value *Run) Transition(to Status) error {
 	if value == nil {
@@ -193,6 +200,9 @@ func (value *Run) Complete(at time.Time) error {
 	if value == nil {
 		return errors.New("agent run is nil")
 	}
+	if err := value.validateFinishedAt(at); err != nil {
+		return err
+	}
 	if err := value.Transition(StatusCompleted); err != nil {
 		return err
 	}
@@ -206,6 +216,9 @@ func (value *Run) Fail(message string, at time.Time) error {
 	}
 	if strings.TrimSpace(message) == "" {
 		return errors.New("agent run error cannot be empty")
+	}
+	if err := value.validateFinishedAt(at); err != nil {
+		return err
 	}
 	if err := value.Transition(StatusFailed); err != nil {
 		return err
