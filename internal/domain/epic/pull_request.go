@@ -69,6 +69,11 @@ func (value PullRequest) Validate() error {
 			return fmt.Errorf("comment %d: %w", index, err)
 		}
 	}
+	for index, reviewer := range value.Reviewers {
+		if err := reviewer.Validate(); err != nil {
+			return fmt.Errorf("reviewer %d: %w", index, err)
+		}
+	}
 	return nil
 }
 

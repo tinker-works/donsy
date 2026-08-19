@@ -34,8 +34,13 @@ func NewComment(author, body string, at ...time.Time) (Comment, error) {
 }
 
 func (value Comment) Validate() error {
-	if strings.TrimSpace(value.Author) == "" && value.Owner.Login == "" && value.Owner.ID.IsZero() {
+	if strings.TrimSpace(value.Author) == "" && value.Owner == (owner.Owner{}) {
 		return errors.New("comment author cannot be empty")
+	}
+	if value.Owner != (owner.Owner{}) {
+		if err := value.Owner.Validate(); err != nil {
+			return err
+		}
 	}
 	if strings.TrimSpace(value.Body) == "" {
 		return errors.New("comment body cannot be empty")

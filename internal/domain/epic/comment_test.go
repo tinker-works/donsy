@@ -3,6 +3,9 @@ package epic
 import (
 	"testing"
 	"time"
+
+	"github.com/tinker-works/donsy/internal/domain/id"
+	"github.com/tinker-works/donsy/internal/domain/owner"
 )
 
 func TestCommentEdit(t *testing.T) {
@@ -32,5 +35,18 @@ func TestCommentEditRejectsUpdateBeforeCreation(t *testing.T) {
 	}
 	if comment != want {
 		t.Fatalf("Edit() mutated the comment on error: got %#v, want %#v", comment, want)
+	}
+}
+
+func TestCommentValidateRejectsInvalidOwner(t *testing.T) {
+	comment := Comment{
+		Author:    "",
+		Owner:     owner.Owner{ID: id.New()},
+		Body:      "review",
+		CreatedAt: time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC),
+	}
+
+	if err := comment.Validate(); err == nil {
+		t.Fatal("Validate() accepted an owner without a login")
 	}
 }

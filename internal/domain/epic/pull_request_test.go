@@ -3,6 +3,9 @@ package epic
 import (
 	"reflect"
 	"testing"
+
+	"github.com/tinker-works/donsy/internal/domain/id"
+	"github.com/tinker-works/donsy/internal/domain/owner"
 )
 
 func TestPullRequestLifecycle(t *testing.T) {
@@ -41,6 +44,22 @@ func TestPullRequestTransitionRejectsInvalidRestoredComment(t *testing.T) {
 
 	if err := value.Transition(StatusApproved); err == nil {
 		t.Fatal("Transition() accepted a pull request with an invalid restored comment")
+	}
+	if !reflect.DeepEqual(value, want) {
+		t.Fatalf("Transition() mutated the pull request on error: got %#v, want %#v", value, want)
+	}
+}
+
+func TestPullRequestTransitionRejectsInvalidRestoredReviewer(t *testing.T) {
+	value, err := NewPullRequest("Improve validation")
+	if err != nil {
+		t.Fatalf("NewPullRequest() error = %v", err)
+	}
+	value.Reviewers = []owner.Owner{{ID: id.New()}}
+	want := value
+
+	if err := value.Transition(StatusApproved); err == nil {
+		t.Fatal("Transition() accepted a pull request with an invalid restored reviewer")
 	}
 	if !reflect.DeepEqual(value, want) {
 		t.Fatalf("Transition() mutated the pull request on error: got %#v, want %#v", value, want)
