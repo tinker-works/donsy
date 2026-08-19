@@ -35,6 +35,22 @@ func TestRunTransitions(t *testing.T) {
 	}
 }
 
+func TestRunStartRejectsAlreadyRunningRun(t *testing.T) {
+	value := NewRun("agent", "project", "issue")
+	started := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
+	if err := value.Start(started); err != nil {
+		t.Fatalf("Start() error = %v", err)
+	}
+	want := value
+
+	if err := value.Start(started.Add(time.Minute)); err == nil {
+		t.Fatal("Start() accepted an already-running run")
+	}
+	if value != want {
+		t.Fatalf("Start() mutated the run on error: got %#v, want %#v", value, want)
+	}
+}
+
 func TestRunCompleteUsesSuppliedFinishTime(t *testing.T) {
 	value := NewRun("agent", "project", "issue")
 	started := time.Date(2099, time.August, 19, 0, 0, 0, 0, time.UTC)

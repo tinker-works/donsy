@@ -207,6 +207,9 @@ func (value *Run) Start(at time.Time) error {
 	if err := value.Validate(); err != nil {
 		return err
 	}
+	if value.Status != StatusPending {
+		return fmt.Errorf("cannot start agent run from %s", value.Status)
+	}
 
 	started := *value
 	started.StartedAt = at
