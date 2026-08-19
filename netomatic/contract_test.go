@@ -345,8 +345,17 @@ func TestPageDaemonLog(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(page.Lines) != 1 || len(page.Lines[0]) != MaxDaemonLogBytes+1 || page.NextOffset != int64(len(longLine)) {
-		t.Fatalf("oversized line page = lines %d, line bytes %d, next %d", len(page.Lines), len(page.Lines[0]), page.NextOffset)
+	if len(page.Lines) != 0 || page.NextOffset != int64(len(longLine)) {
+		t.Fatalf("oversized line page = lines %d, next %d", len(page.Lines), page.NextOffset)
+	}
+
+	content = append(longLine, []byte("kept\n")...)
+	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(page.Lines, []string{"kept"}) || page.NextOffset != int64(len(content)) {
+		t.Fatalf("page after oversized line = %#v", page)
 	}
 }
 

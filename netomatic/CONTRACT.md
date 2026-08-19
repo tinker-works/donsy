@@ -68,12 +68,14 @@ route. An em dash means that the operation has no request body.
 newline-delimited log. The request `limit` must be positive. The daemon clamps
 it to `MaxDaemonLogLines` (1000) and also caps a page at `MaxDaemonLogBytes`
 (64 KiB). Pages contain complete lines only. If one line is larger than the
-byte cap, that complete line is returned as the sole line in the page; it is
-never split and the byte cap is allowed to be exceeded for that line.
+byte cap, that complete line is skipped and the page offset advances past its
+newline. It is never split or returned, and subsequent lines can fill the same
+page.
 
-`next_offset` is always the byte offset immediately after the last returned
-newline; returned `lines` do not include that newline. A client should pass it unchanged to the next request. If the log was
-truncated or rotated and the requested offset is past the current file size,
-the daemon starts at byte zero and sets `offset_reset` to `true`. An empty page
-sets `next_offset` to the effective starting offset, so polling at EOF is
-stable.
+`next_offset` is always the byte offset immediately after the last newline
+consumed while building the page, including skipped oversized records; returned
+`lines` do not include that newline. A client should pass it unchanged to the
+next request. If the log was truncated or rotated and the requested offset is
+past the current file size, the daemon starts at byte zero and sets
+`offset_reset` to `true`. When no record is consumed, `next_offset` remains the
+effective starting offset, so polling at EOF is stable.

@@ -23,8 +23,8 @@ const (
 	APIPrefix = "/api/" + ProtocolVersion
 
 	// MaxDaemonLogBytes and MaxDaemonLogLines are enforced by the daemon for
-	// every log page. A line is never split; a single oversized line is
-	// returned whole and may therefore exceed MaxDaemonLogBytes.
+	// every log page. A line is never split; a single oversized line is skipped
+	// and the page offset advances past it.
 	MaxDaemonLogBytes = 64 * 1024
 	MaxDaemonLogLines = 1000
 	// MaxLogBytes and MaxLogLines are shorter names for clients that do not
@@ -556,8 +556,9 @@ type ReadDaemonLogRequest struct {
 }
 
 // ReadDaemonLogResponse contains only complete newline-delimited log lines.
-// If the daemon has rotated or truncated the file and Offset is no longer
-// valid, it starts at zero and reports OffsetReset=true.
+// Oversized records are omitted, but still advance NextOffset. If the daemon
+// has rotated or truncated the file and Offset is no longer valid, it starts
+// at zero and reports OffsetReset=true.
 type ReadDaemonLogResponse struct {
 	Lines       []string `json:"lines"`
 	NextOffset  int64    `json:"next_offset"`
@@ -624,11 +625,15 @@ func PageDaemonLog(content []byte, request ReadDaemonLogRequest) (ReadDaemonLogR
 		lineEnd := cursor + int64(relativeNewline)
 		next := lineEnd + 1
 		lineBytes := int(next - cursor)
-		if len(lines) > 0 && usedBytes+lineBytes > MaxDaemonLogBytes {
+		if lineBytes > MaxDaemonLogBytes {
+			// Oversized lines cannot be returned whole without breaking the byte
+			// bound. Skip the complete record so a client can continue polling.
+			cursor = next
+			continue
+		}
+		if usedBytes+lineBytes > MaxDaemonLogBytes {
 			break
 		}
-		// A single oversized line is returned whole. This both preserves the
-		// complete-line guarantee and guarantees that NextOffset advances.
 		lines = append(lines, string(content[cursor:lineEnd]))
 		usedBytes += lineBytes
 		cursor = next
