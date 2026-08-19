@@ -166,6 +166,9 @@ func (value *Run) Transition(to Status) error {
 	if value == nil {
 		return errors.New("agent run is nil")
 	}
+	if err := value.Validate(); err != nil {
+		return err
+	}
 	if !to.Valid() {
 		return fmt.Errorf("unknown agent run status %q", to)
 	}

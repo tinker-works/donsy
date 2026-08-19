@@ -192,3 +192,51 @@ func TestRunTransitionsRejectInvalidRestoredRun(t *testing.T) {
 		})
 	}
 }
+
+func TestRunTransitionsRejectInvalidRestoredStatus(t *testing.T) {
+	started := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name       string
+		transition func(*Run) error
+	}{
+		{
+			name: "transition",
+			transition: func(value *Run) error {
+				return value.Transition(StatusRunning)
+			},
+		},
+		{
+			name: "start",
+			transition: func(value *Run) error {
+				return value.Start(started)
+			},
+		},
+		{
+			name: "complete",
+			transition: func(value *Run) error {
+				return value.Complete(started.Add(time.Minute))
+			},
+		},
+		{
+			name: "fail",
+			transition: func(value *Run) error {
+				return value.Fail("failed", started.Add(time.Minute))
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			value := NewRun("agent", "project", "issue")
+			value.Status = Status("invalid")
+			want := value
+
+			if err := test.transition(&value); err == nil {
+				t.Fatal("transition accepted an invalid restored status")
+			}
+			if value != want {
+				t.Fatalf("transition mutated the run on error: got %#v, want %#v", value, want)
+			}
+		})
+	}
+}
