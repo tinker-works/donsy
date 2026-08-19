@@ -2,7 +2,8 @@
 
 The daemon speaks protocol `v1` below `/api/v1`. Protocol compatibility is
 exact: a client must reject any protocol other than `v1`. Every operation
-except `GET /health` and `GET /capabilities` requires the daemon bearer token.
+requires the daemon bearer token. The separate unauthenticated `/healthz`
+readiness endpoint is outside this client contract.
 
 The request column names the JSON DTO. Path parameters are also present in the
 request DTO so an implementation can validate a request before constructing a
@@ -48,7 +49,6 @@ route. An em dash means that the operation has no request body.
 | CancelAgentRun | POST | `/api/v1/agent-runs/{run}/cancel` | `CancelAgentRunRequest` | `CancelAgentRunResponse` |
 | AgentActivity | GET | `/api/v1/agent-runs/{run}/activity` | `AgentActivityRequest` | `AgentActivityResponse` |
 | RunOutput | GET | `/api/v1/agent-runs/{run}/output` | `RunOutputRequest` | `RunOutputResponse` |
-| Health | GET | `/api/v1/health` | — | `HealthResponse` |
 | Capabilities | GET | `/api/v1/capabilities` | — | `CapabilitiesResponse` |
 | AddRepository | POST | `/api/v1/repositories` | `AddRepositoryRequest` | `AddRepositoryResponse` |
 | GetAgentRun | GET | `/api/v1/agent-runs/{run}` | `GetAgentRunRequest` | `GetAgentRunResponse` |

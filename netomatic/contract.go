@@ -6,7 +6,6 @@ package netomatic
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -68,36 +67,38 @@ const (
 type ErrorCode string
 
 const (
-	ErrorInvalidRequest ErrorCode = "invalid_request"
-	ErrorUnauthorized   ErrorCode = "unauthorized"
-	ErrorForbidden      ErrorCode = "forbidden"
-	ErrorNotFound       ErrorCode = "not_found"
-	ErrorConflict       ErrorCode = "conflict"
-	ErrorUnavailable    ErrorCode = "unavailable"
-	ErrorInternal       ErrorCode = "internal"
+	ErrorInvalidRequest       ErrorCode = "invalid_request"
+	ErrorUnauthorized         ErrorCode = "unauthorized"
+	ErrorForbidden            ErrorCode = "forbidden"
+	ErrorNotFound             ErrorCode = "not_found"
+	ErrorConflict             ErrorCode = "conflict"
+	ErrorFeatureNotConfigured ErrorCode = "feature_not_configured"
+	ErrorUnavailable          ErrorCode = "unavailable"
+	ErrorInternal             ErrorCode = "internal"
 )
 
 // APIError is the structured error returned for every non-success API
-// response. Details is deliberately opaque so new server-side diagnostics do
-// not require a client package release.
+// response. Detail is the daemon's user-facing explanation of the failure.
 type APIError struct {
-	Code       ErrorCode       `json:"code"`
-	Message    string          `json:"message"`
-	StatusCode int             `json:"status_code,omitempty"`
-	Details    json.RawMessage `json:"details,omitempty"`
+	Code       ErrorCode `json:"code"`
+	Detail     string    `json:"detail"`
+	StatusCode int       `json:"-"`
 }
 
 func (e *APIError) Error() string {
 	if e == nil {
 		return "netomatic: unknown API error"
 	}
-	if e.Code == "" {
-		return e.Message
+	if e.Detail != "" {
+		return e.Detail
 	}
-	if e.Message == "" {
+	if e.Code != "" {
 		return string(e.Code)
 	}
-	return string(e.Code) + ": " + e.Message
+	if e.StatusCode != 0 {
+		return fmt.Sprintf("netomatic: API request failed with status %d", e.StatusCode)
+	}
+	return "netomatic: unknown API error"
 }
 
 // Unwrap exposes the standard status errors when a caller wants to use
@@ -119,6 +120,11 @@ func (e *APIError) Unwrap() error {
 		return ErrConflict
 	case http.StatusServiceUnavailable:
 		return ErrUnavailable
+	case http.StatusNotImplemented:
+		if e.Code == ErrorFeatureNotConfigured {
+			return ErrUnavailable
+		}
+		return nil
 	case http.StatusInternalServerError, http.StatusBadGateway, http.StatusGatewayTimeout:
 		return ErrInternal
 	default:
@@ -143,32 +149,13 @@ type ErrorResponse = APIError
 // an error response from the error value returned by a client method.
 type APIErrorResponse = APIError
 
-// HealthResponse describes daemon readiness. Health is intentionally safe to
-// query before authentication so a client can distinguish a stopped daemon
-// from a bad token.
-type HealthResponse struct {
-	Status   string `json:"status"`
-	Protocol string `json:"protocol"`
-	Version  string `json:"version,omitempty"`
-}
-
-// Capability describes one optional daemon feature.
-type Capability struct {
-	Name      string `json:"name"`
-	Available bool   `json:"available"`
-	Reason    string `json:"reason,omitempty"`
-}
-
-// CapabilitiesResponse is the version and feature negotiation response.
-type CapabilitiesResponse struct {
-	Protocol     string       `json:"protocol"`
-	Capabilities []Capability `json:"capabilities"`
-}
+// CapabilitiesResponse lists the optional daemon features and whether each is
+// configured for the current process.
+type CapabilitiesResponse map[string]bool
 
 type ProcessResponse struct {
-	Status    string `json:"status"`
-	PID       int    `json:"pid,omitempty"`
-	StartedAt string `json:"started_at,omitempty"`
+	CurrentUser string `json:"currentUser"`
+	Protocol    string `json:"protocol"`
 }
 
 type Project struct {
@@ -734,8 +721,7 @@ type PurgeResponse struct {
 
 // Client is the complete public daemon contract. Implementations may use any
 // transport, but all methods are context-aware and exchange only these public
-// DTOs. Health and Capabilities are unauthenticated discovery methods on the
-// same interface; all other methods require daemon authentication.
+// DTOs. Discovery and all other methods require daemon authentication.
 type Client interface {
 	Process(context.Context) (ProcessResponse, error)
 	ListProjects(context.Context) (ListProjectsResponse, error)
@@ -777,7 +763,6 @@ type Client interface {
 	RunOutput(context.Context, RunOutputRequest) (RunOutputResponse, error)
 	ReadDaemonLog(context.Context, int64, int) (ReadDaemonLogResponse, error)
 
-	Health(context.Context) (HealthResponse, error)
 	Capabilities(context.Context) (CapabilitiesResponse, error)
 	AddRepository(context.Context, AddRepositoryRequest) (AddRepositoryResponse, error)
 	GetAgentRun(context.Context, GetAgentRunRequest) (GetAgentRunResponse, error)
@@ -852,8 +837,7 @@ var Contract = []Operation{
 	{Name: "CancelAgentRun", Method: MethodPost, Route: APIPrefix + "/agent-runs/{run}/cancel", Request: "CancelAgentRunRequest", Response: "CancelAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/activity", Request: "AgentActivityRequest", Response: "AgentActivityResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/output", Request: "RunOutputRequest", Response: "RunOutputResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "Health", Method: MethodGet, Route: APIPrefix + "/health", Response: "HealthResponse", SuccessStatus: http.StatusOK},
-	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK},
+	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "AddRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}", Request: "GetAgentRunRequest", Response: "GetAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -879,7 +863,7 @@ func ContractOperations() []Operation {
 const ClientOperationCount = 38
 
 // DaemonOperationCount includes every row in Contract.
-const DaemonOperationCount = 51
+const DaemonOperationCount = 50
 
 // ValidateContract catches accidental omissions when a route is added to the
 // table without a corresponding public DTO or method declaration.

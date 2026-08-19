@@ -280,7 +280,7 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 	t.Run("non-2xx response", func(t *testing.T) {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
-			_, _ = io.WriteString(w, `{"code":"unauthorized","message":"bad token","details":{"source":"test"}}`)
+			_, _ = io.WriteString(w, `{"code":"unauthorized","detail":"bad token"}`)
 		}))
 		defer server.Close()
 		client, err := NewHTTPClient(server.URL, "token")
@@ -294,6 +294,39 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 		}
 		if !errors.Is(err, ErrUnauthorized) {
 			t.Fatal("API error did not unwrap to ErrUnauthorized")
+		}
+	})
+
+	t.Run("unavailable feature response", func(t *testing.T) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.URL.EscapedPath() != APIPrefix+"/projects" {
+				t.Fatalf("path = %q, want %q", r.URL.EscapedPath(), APIPrefix+"/projects")
+			}
+			if r.Header.Get("Authorization") != "Bearer token" {
+				t.Fatalf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
+			}
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"repository discovery is unavailable"}`)
+		}))
+		defer server.Close()
+		client, err := NewHTTPClient(server.URL, "token")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		_, err = client.ListProjects(context.Background())
+		var apiError *APIError
+		if !errors.As(err, &apiError) {
+			t.Fatalf("error = %v, want APIError", err)
+		}
+		if apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != "repository discovery is unavailable" {
+			t.Fatalf("API error = %#v", apiError)
+		}
+		if apiError.Error() != apiError.Detail {
+			t.Fatalf("API error string = %q, want daemon detail %q", apiError.Error(), apiError.Detail)
+		}
+		if !errors.Is(err, ErrUnavailable) {
+			t.Fatalf("error = %v, want ErrUnavailable", err)
 		}
 	})
 

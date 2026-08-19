@@ -124,12 +124,12 @@ func decodeAPIError(statusCode int, payload []byte) error {
 	apiError := &APIError{StatusCode: statusCode}
 	if len(payload) != 0 {
 		if err := json.Unmarshal(payload, apiError); err != nil {
-			apiError.Message = string(payload)
+			apiError.Detail = string(payload)
 		}
 	}
 	apiError.StatusCode = statusCode
-	if apiError.Message == "" {
-		apiError.Message = http.StatusText(statusCode)
+	if apiError.Detail == "" {
+		apiError.Detail = http.StatusText(statusCode)
 	}
 	return apiError
 }
@@ -394,15 +394,9 @@ func (c *HTTPClient) RunOutput(ctx context.Context, request RunOutputRequest) (R
 	return response, err
 }
 
-func (c *HTTPClient) Health(ctx context.Context) (HealthResponse, error) {
-	var response HealthResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/health", false, nil, nil, &response, http.StatusOK)
-	return response, err
-}
-
 func (c *HTTPClient) Capabilities(ctx context.Context) (CapabilitiesResponse, error) {
 	var response CapabilitiesResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/capabilities", false, nil, nil, &response, http.StatusOK)
+	err := c.do(ctx, MethodGet, APIPrefix+"/capabilities", true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 

@@ -14,16 +14,16 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+13 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+13)
+	if len(Contract) != ClientOperationCount+12 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+12)
 	}
 	if Contract[ClientOperationCount-1].Name != "RunOutput" {
 		t.Fatalf("last client operation = %q, want RunOutput", Contract[ClientOperationCount-1].Name)
 	}
-	if Contract[ClientOperationCount].Name != "Health" || Contract[ClientOperationCount+1].Name != "Capabilities" {
-		t.Fatal("health and capabilities must follow the client operation inventory")
+	if Contract[ClientOperationCount].Name != "Capabilities" || !Contract[ClientOperationCount].Authenticated {
+		t.Fatal("authenticated capabilities must follow the client operation inventory")
 	}
-	if Contract[ClientOperationCount+2].Name != "AddRepository" || !Contract[ClientOperationCount+2].Authenticated {
+	if Contract[ClientOperationCount+1].Name != "AddRepository" || !Contract[ClientOperationCount+1].Authenticated {
 		t.Fatal("daemon mutation operations should remain authenticated")
 	}
 	if Contract[len(Contract)-1].Name != "ReadDaemonLog" || !Contract[len(Contract)-1].Authenticated {
@@ -158,8 +158,9 @@ var (
 )
 
 var contractDTOs = map[string]any{
-	"ProcessResponse": ProcessResponse{
-		Status: "running", PID: 42, StartedAt: "2026-08-19T12:00:00Z",
+	"ProcessResponse": contractFixture{
+		value: ProcessResponse{CurrentUser: "octocat", Protocol: ProtocolVersion},
+		json:  `{"currentUser":"octocat","protocol":"v1"}`,
 	},
 	"ListProjectsResponse": ListProjectsResponse{
 		Projects: []Project{{Name: "demo", Description: "Example project", Open: true}},
@@ -280,10 +281,20 @@ var contractDTOs = map[string]any{
 	"RunOutputResponse": RunOutputResponse{Output: RunOutput{
 		RunID: "run-1", Output: "finished step\n", Done: true,
 	}},
-	"HealthResponse": HealthResponse{Status: "ready", Protocol: ProtocolVersion, Version: "1.2.3"},
-	"CapabilitiesResponse": CapabilitiesResponse{Protocol: ProtocolVersion, Capabilities: []Capability{
-		{Name: "reconcile", Available: true}, {Name: "purge", Available: false, Reason: "disabled"},
-	}},
+	"CapabilitiesResponse": contractFixture{
+		value: CapabilitiesResponse{
+			"cancelAgentRun":        true,
+			"discoverOrganisations": true,
+			"listRepositories":      true,
+			"readRunOutput":         true,
+			"reconcileSandboxes":    true,
+			"resetIssue":            true,
+			"runEpicAgent":          true,
+			"runIssueAgent":         true,
+			"syncRepositories":      true,
+		},
+		json: `{"cancelAgentRun":true,"discoverOrganisations":true,"listRepositories":true,"readRunOutput":true,"reconcileSandboxes":true,"resetIssue":true,"runEpicAgent":true,"runIssueAgent":true,"syncRepositories":true}`,
+	},
 	"AddRepositoryRequest": AddRepositoryRequest{
 		Project: "demo", Name: "donsy", URL: "https://example.test/donsy", Branch: "main",
 	},
@@ -432,11 +443,15 @@ func TestProtocolAndAPIError(t *testing.T) {
 		t.Fatalf("ValidateProtocol(v2) = %v", err)
 	}
 
-	apiError := &APIError{Code: ErrorUnauthorized, Message: "bad token", StatusCode: 401}
-	if apiError.Error() != "unauthorized: bad token" {
+	apiError := &APIError{Code: ErrorUnauthorized, Detail: "bad token", StatusCode: 401}
+	if apiError.Error() != "bad token" {
 		t.Fatalf("APIError.Error() = %q", apiError.Error())
 	}
 	if !errors.Is(apiError, ErrUnauthorized) {
 		t.Fatal("APIError should unwrap its HTTP status error")
+	}
+	featureError := &APIError{Code: ErrorFeatureNotConfigured, Detail: "repository discovery is unavailable", StatusCode: 501}
+	if !errors.Is(featureError, ErrUnavailable) {
+		t.Fatal("feature_not_configured 501 should unwrap to ErrUnavailable")
 	}
 }
