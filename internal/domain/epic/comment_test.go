@@ -1,70 +1,33 @@
 package epic
 
-import (
-	"reflect"
-	"testing"
-	"time"
+import "testing"
 
-	"github.com/tinker-works/donsy/internal/domain/id"
-	"github.com/tinker-works/donsy/internal/domain/owner"
-)
+func TestCommentSetBody(t *testing.T) {
+	// Arrange
+	comment := Comment{}
 
-func TestCommentEdit(t *testing.T) {
-	created := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
-	comment, err := NewComment("alice", "first", created)
-	if err != nil {
-		t.Fatalf("NewComment() error = %v", err)
+	// Act
+	if err := comment.SetBody("Body"); err != nil {
+		t.Fatal(err)
 	}
-	if err := comment.Edit("updated", created.Add(time.Minute)); err != nil {
-		t.Fatalf("Edit() error = %v", err)
-	}
-	if comment.Body != "updated" {
-		t.Fatalf("Edit() body = %q", comment.Body)
+
+	// Assert
+	if comment.Body != "Body" {
+		t.Fatalf("unexpected comment body: %q", comment.Body)
 	}
 }
 
-func TestCommentEditRejectsInvalidRestoredChronology(t *testing.T) {
-	created := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
-	comment, err := NewComment("alice", "first", created)
+func TestCreateCommentTrimsAuthor(t *testing.T) {
+	// Arrange
+
+	// Act
+	comment, err := CreateComment(" author ", "Body")
 	if err != nil {
-		t.Fatalf("NewComment() error = %v", err)
+		t.Fatal(err)
 	}
-	comment.UpdatedAt = created.Add(-time.Minute)
-	want := comment
-
-	if err := comment.Edit("updated", created.Add(time.Minute)); err == nil {
-		t.Fatal("Edit() accepted a comment with invalid restored chronology")
-	}
-	if !reflect.DeepEqual(comment, want) {
-		t.Fatalf("Edit() mutated the comment on error: got %#v, want %#v", comment, want)
-	}
-}
-
-func TestCommentEditRejectsUpdateBeforeCreation(t *testing.T) {
-	created := time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC)
-	comment, err := NewComment("alice", "first", created)
-	if err != nil {
-		t.Fatalf("NewComment() error = %v", err)
-	}
-	want := comment
-
-	if err := comment.Edit("updated", created.Add(-time.Minute)); err == nil {
-		t.Fatal("Edit() accepted an update time before creation")
-	}
-	if comment != want {
-		t.Fatalf("Edit() mutated the comment on error: got %#v, want %#v", comment, want)
-	}
-}
-
-func TestCommentValidateRejectsInvalidOwner(t *testing.T) {
-	comment := Comment{
-		Author:    "",
-		Owner:     owner.Owner{ID: id.New()},
-		Body:      "review",
-		CreatedAt: time.Date(2026, time.August, 19, 0, 0, 0, 0, time.UTC),
-	}
-
-	if err := comment.Validate(); err == nil {
-		t.Fatal("Validate() accepted an owner without a login")
+	// Assert
+	if comment.ID == "" || comment.Author != "author" ||
+		comment.Body != "Body" || comment.CreatedAt.IsZero() {
+		t.Fatalf("unexpected comment: %#v", comment)
 	}
 }

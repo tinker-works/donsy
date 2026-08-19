@@ -1,129 +1,96 @@
 package epic
 
 import (
-	"errors"
 	"fmt"
+	"github.com/tinker-works/donsy/internal/domain"
 	"strings"
 	"time"
-
-	"github.com/tinker-works/donsy/internal/domain/id"
 )
 
-// Issue is a tracked unit of work belonging to an epic.
 type Issue struct {
-	ID           id.ID         `json:"id"`
-	Number       int           `json:"number,omitempty"`
-	Title        string        `json:"title"`
-	Body         string        `json:"body,omitempty"`
-	Status       Status        `json:"status"`
-	EpicID       id.ID         `json:"epic_id"`
-	PullRequests []PullRequest `json:"pull_requests,omitempty"`
-	Comments     []Comment     `json:"comments,omitempty"`
-	CreatedAt    time.Time     `json:"created_at"`
-	ClosedAt     time.Time     `json:"closed_at,omitempty"`
+	ID         string
+	Title      string
+	ParentID   string
+	Repository string
+	State      IssueState
+	CreatedAt  time.Time
+	Body       string
+	Comments   []Comment
+	// BlockedBy names issues this one waits on beyond its own children. Nesting
+	// already orders a subtree; this is for a dependency it cannot express, such
+	// as one on a sibling or on work in a different branch of the tree. It never
+	// names an ancestor — an ancestor already waits on this issue.
+	BlockedBy []string
 }
 
-func NewIssue(title string, details ...string) (Issue, error) {
-	value := Issue{ID: id.New(), Title: strings.TrimSpace(title), Status: StatusOpen, CreatedAt: time.Now()}
-	if len(details) > 0 {
-		value.Body = details[0]
-	}
-	if err := value.Validate(); err != nil {
-		return Issue{}, err
-	}
-	return value, nil
+// settled reports whether an issue reached a state nothing will move it out
+// of, which is what clears it as a blocker.
+func (i Issue) settled() bool {
+	return i.State == IssueStateMerged || i.State == IssueStateClosed
 }
 
-func (value Issue) Validate() error {
-	if strings.TrimSpace(value.Title) == "" {
-		return errors.New("issue title cannot be empty")
+func CreateIssue(title, body string) (Issue, error) {
+	return createIssue(title, body, "")
+}
+
+// CreateRepositoryIssue creates a non-root issue owned by one repository.
+func CreateRepositoryIssue(title, body, repository string) (Issue, error) {
+	return createIssue(title, body, repository)
+}
+
+func createIssue(title, body, repository string) (Issue, error) {
+	var issue Issue
+	title = strings.TrimSpace(title)
+	if title == "" {
+		return Issue{}, fmt.Errorf("issue title is required")
 	}
-	if err := validateAggregateStatus(value.Status, validIssueStatus, "issue"); err != nil {
-		return fmt.Errorf("issue: %w", err)
+
+	issue = Issue{
+		ID:         domain.MintULID(),
+		Title:      title,
+		Repository: strings.TrimSpace(repository),
+		State:      IssueStateOpen,
+		CreatedAt:  time.Now(),
+		Body:       body,
 	}
-	if value.Number < 0 {
-		return errors.New("issue number cannot be negative")
-	}
-	if !value.ClosedAt.IsZero() && value.ClosedAt.Before(value.CreatedAt) {
-		return errors.New("issue closed before it was created")
-	}
-	for index, request := range value.PullRequests {
-		if err := request.Validate(); err != nil {
-			return fmt.Errorf("pull request %d: %w", index, err)
-		}
-	}
-	for index, comment := range value.Comments {
-		if err := comment.Validate(); err != nil {
-			return fmt.Errorf("comment %d: %w", index, err)
-		}
-	}
+	return issue, issue.Validate()
+}
+
+func (i *Issue) setParent(parentID string) error {
+	i.ParentID = parentID
 	return nil
 }
 
-func (value Issue) Valid() bool { return value.Validate() == nil }
-
-func (value *Issue) Transition(to Status) error {
-	if value == nil {
-		return errors.New("issue is nil")
+func (i *Issue) SetTitle(title string) error {
+	if i.State == IssueStateClosed {
+		return fmt.Errorf("cannot set title of closed issue")
 	}
-	if err := value.Validate(); err != nil {
-		return err
-	}
-	if err := transition(value.Status, to, validIssueStatus, "issue", false); err != nil {
-		return err
-	}
-	transitioned := *value
-	transitioned.Status = to
-	if to == StatusClosed || to == StatusDone {
-		transitioned.ClosedAt = time.Now()
-	}
-	if err := transitioned.Validate(); err != nil {
-		return err
-	}
-	*value = transitioned
+	i.Title = title
 	return nil
 }
 
-func (value *Issue) Close() error {
-	if value == nil {
-		return errors.New("issue is nil")
+func (i *Issue) SetBody(body string) error {
+	if i.State == IssueStateClosed {
+		return fmt.Errorf("cannot set body of closed issue")
 	}
-	return value.Transition(StatusClosed)
-}
-
-func (value *Issue) AddPullRequest(request PullRequest) error {
-	if value == nil {
-		return errors.New("issue is nil")
-	}
-	if err := request.Validate(); err != nil {
-		return err
-	}
-	for _, existing := range value.PullRequests {
-		if existing.ID != "" && existing.ID == request.ID || existing.Number != 0 && existing.Number == request.Number {
-			return fmt.Errorf("pull request %d already belongs to issue", request.Number)
-		}
-	}
-	updated := *value
-	updated.PullRequests = append(append([]PullRequest(nil), value.PullRequests...), request)
-	if err := updated.Validate(); err != nil {
-		return err
-	}
-	*value = updated
+	i.Body = body
 	return nil
 }
 
-func (value *Issue) AddComment(comment Comment) error {
-	if value == nil {
-		return errors.New("issue is nil")
-	}
+func (i *Issue) AddComment(comment Comment) error {
 	if err := comment.Validate(); err != nil {
 		return err
 	}
-	updated := *value
-	updated.Comments = append(append([]Comment(nil), value.Comments...), comment)
-	if err := updated.Validate(); err != nil {
-		return err
+	i.Comments = append(i.Comments, comment)
+	return nil
+}
+
+func (i Issue) Validate() error {
+	if i.ID == "" || strings.TrimSpace(i.Title) == "" {
+		return fmt.Errorf("issue id and title are required")
 	}
-	*value = updated
+	if !isIssueState(i.State) {
+		return fmt.Errorf("issue %s has invalid state %q", i.ID, i.State)
+	}
 	return nil
 }
