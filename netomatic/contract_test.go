@@ -1,7 +1,6 @@
 package netomatic
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -14,11 +13,11 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+9 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+9)
+	if len(Contract) != ClientOperationCount+8 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+8)
 	}
-	if Contract[ClientOperationCount-1].Name != "RunOutput" {
-		t.Fatalf("last client operation = %q, want RunOutput", Contract[ClientOperationCount-1].Name)
+	if Contract[ClientOperationCount-1].Name != "ListSandboxes" {
+		t.Fatalf("last client operation = %q, want ListSandboxes", Contract[ClientOperationCount-1].Name)
 	}
 	if Contract[ClientOperationCount].Name != "Capabilities" || !Contract[ClientOperationCount].Authenticated {
 		t.Fatal("authenticated capabilities must follow the client operation inventory")
@@ -26,8 +25,8 @@ func TestContractIsComplete(t *testing.T) {
 	if Contract[ClientOperationCount+1].Name != "AddRepository" || !Contract[ClientOperationCount+1].Authenticated {
 		t.Fatal("daemon mutation operations should remain authenticated")
 	}
-	if Contract[len(Contract)-1].Name != "ReadDaemonLog" || !Contract[len(Contract)-1].Authenticated {
-		t.Fatal("daemon log must be the authenticated final operation")
+	if Contract[ClientOperationCount+2].Name != "GetAgentRun" || !Contract[ClientOperationCount+2].Authenticated {
+		t.Fatal("agent run lookup must remain authenticated")
 	}
 }
 
@@ -258,30 +257,36 @@ var contractDTOs = map[string]any{
 	"GetOrganisationResponse": GetOrganisationResponse{Organisation: Organisation{
 		ID: "org-1", Name: "acme",
 	}},
-	"GetAgentSettingsRequest": GetAgentSettingsRequest{Project: "demo"},
-	"GetAgentSettingsResponse": GetAgentSettingsResponse{Settings: []AgentSettings{{
-		Agent: "coder", Variant: "fast", Values: map[string]string{"model": "small", "temperature": "0.2"},
-	}}},
-	"ListAgentRunsRequest": ListAgentRunsRequest{Project: "demo"},
-	"ListAgentRunsResponse": ListAgentRunsResponse{Runs: []AgentRun{{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "failed", SessionID: "session-1", Error: "agent exited", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
-	}}},
-	"ListSandboxesRequest": ListSandboxesRequest{},
-	"ListSandboxesResponse": ListSandboxesResponse{Sandboxes: []Sandbox{{
-		ID: "sandbox-1", Name: "demo-sandbox", Status: "ready", AgentRunID: "run-1",
-	}}},
-	"CancelAgentRunRequest": CancelAgentRunRequest{Run: "run-1"},
-	"CancelAgentRunResponse": CancelAgentRunResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "cancelled", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
-	}},
-	"AgentActivityRequest": AgentActivityRequest{Run: "run-1"},
-	"AgentActivityResponse": AgentActivityResponse{Activity: []AgentActivity{{
-		RunID: "run-1", Status: "working", Message: "Writing code", UpdatedAt: "2026-08-19T12:01:00Z",
-	}}},
-	"RunOutputRequest": RunOutputRequest{Run: "run-1", Offset: 128},
-	"RunOutputResponse": RunOutputResponse{Output: RunOutput{
-		RunID: "run-1", Output: "finished step\n", Done: true,
-	}},
+	"AgentSettings": contractFixture{
+		value: AgentSettings{SetupScript: "agents/setup.sh", Roles: map[string]AgentProfile{
+			"coding": {Agent: "coder", Variant: "fast", MaxRounds: 3},
+		}},
+		json: `{"SetupScript":"agents/setup.sh","Roles":{"coding":{"Agent":"coder","Variant":"fast","MaxRounds":3}}}`,
+	},
+	"SetAgentRoleRequest": SetAgentRoleRequest{Agent: "coder", Variant: "fast"},
+	"ListAgentRunsResponse": contractFixture{
+		value: ListAgentRunsResponse{{
+			ID: "run-1", ProjectID: 7, SandboxID: "sandbox-1", Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "failed", Round: 2, Error: "agent exited", Usage: RunUsage{TokensIn: 12, TokensOut: 34, CostUSD: 0.12}, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z"), FinishedAt: stringPointer("2026-08-19T12:02:00Z"),
+		}},
+		json: `[{"ID":"run-1","ProjectID":7,"SandboxID":"sandbox-1","Role":"coding","Subject":{"Kind":"issue","ID":"issue-1"},"Engine":"opencode","Agent":"coder","Variant":"fast","SessionMode":"fresh","Status":"failed","Round":2,"Error":"agent exited","Usage":{"TokensIn":12,"TokensOut":34,"CostUSD":0.12},"CreatedAt":"2026-08-19T12:00:00Z","StartedAt":"2026-08-19T12:00:01Z","FinishedAt":"2026-08-19T12:02:00Z"}]`,
+	},
+	"AgentRun": contractFixture{
+		value: AgentRun{ID: "run-1", ProjectID: 7, SandboxID: "sandbox-1", Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "running", Round: 2, Usage: RunUsage{TokensIn: 12, TokensOut: 34, CostUSD: 0.12}, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z")},
+		json:  `{"ID":"run-1","ProjectID":7,"SandboxID":"sandbox-1","Role":"coding","Subject":{"Kind":"issue","ID":"issue-1"},"Engine":"opencode","Agent":"coder","Variant":"fast","SessionMode":"fresh","Status":"running","Round":2,"Error":"","Usage":{"TokensIn":12,"TokensOut":34,"CostUSD":0.12},"CreatedAt":"2026-08-19T12:00:00Z","StartedAt":"2026-08-19T12:00:01Z","FinishedAt":null}`,
+	},
+	"RunOutputPage": contractFixture{
+		value: RunOutputPage{Entries: []TranscriptEntry{{Kind: 0, Tool: "", CallID: "call-1", Text: "finished step"}}, Next: 128},
+		json:  `{"Entries":[{"Kind":0,"Tool":"","CallID":"call-1","Text":"finished step"}],"Next":128}`,
+	},
+	"AgentActivityResponse": contractFixture{
+		value: AgentActivityResponse{Sizes: map[string]int64{"run-1": 128, "run-2": 256}},
+		json:  `{"sizes":{"run-1":128,"run-2":256}}`,
+	},
+	"CancelAgentRunResponse": CancelAgentRunResponse{Cancelled: true},
+	"ListSandboxesResponse": contractFixture{
+		value: ListSandboxesResponse{{ID: "sandbox-1", ProjectID: 7, Name: "demo-sandbox", Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Status: "running", CreatedAt: "2026-08-19T12:00:00Z", UpdatedAt: "2026-08-19T12:01:00Z"}},
+		json:  `[{"ID":"sandbox-1","ProjectID":7,"Name":"demo-sandbox","Role":"coding","Subject":{"Kind":"issue","ID":"issue-1"},"Status":"running","CreatedAt":"2026-08-19T12:00:00Z","UpdatedAt":"2026-08-19T12:01:00Z"}]`,
+	},
 	"CapabilitiesResponse": contractFixture{
 		value: CapabilitiesResponse{
 			"cancelAgentRun":        true,
@@ -302,13 +307,9 @@ var contractDTOs = map[string]any{
 	"AddRepositoryResponse": AddRepositoryResponse{Repository: Repository{
 		ID: "repo-1", Name: "donsy", Owner: "acme", URL: "https://example.test/donsy", Default: "main",
 	}},
-	"GetAgentRunRequest": GetAgentRunRequest{Run: "run-1"},
-	"GetAgentRunResponse": GetAgentRunResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "complete", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
-	}},
 	"RunIssueRequest": RunIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
 	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
+		ID: "run-1", ProjectID: 7, Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "queued", Round: 1, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z"),
 	}},
 	"OpenPullRequestsRequest":       OpenPullRequestsRequest{Project: "demo"},
 	"OpenPullRequestsResponse":      contractListFixture(OpenPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
@@ -318,115 +319,39 @@ var contractDTOs = map[string]any{
 	"ReconcileResponse":             ReconcileResponse{Reconciled: 4},
 	"PurgeRequest":                  PurgeRequest{Project: "demo"},
 	"PurgeResponse":                 PurgeResponse{Purged: 2},
-	"ReadDaemonLogRequest":          ReadDaemonLogRequest{Offset: 32, Limit: 4},
-	"ReadDaemonLogResponse": ReadDaemonLogResponse{
-		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
-	},
-	"ShapeBody": contractBodyFixture{Name: "new"},
+	"ShapeBody":                     contractBodyFixture{Name: "new"},
 }
 
 var contractPathDTOs = map[string]any{
-	"ShapePath":   contractPathFixture{Project: "demo/blue"},
-	"ProjectPath": ProjectPath{ProjectID: 42},
-	"EpicPath":    EpicPath{ProjectID: 42, EpicID: "epic/one"},
+	"ShapePath":            contractPathFixture{Project: "demo/blue"},
+	"ProjectPath":          ProjectPath{ProjectID: 42},
+	"EpicPath":             EpicPath{ProjectID: 42, EpicID: "epic/one"},
+	"GetAgentSettingsPath": GetAgentSettingsPath{ProjectID: 7},
+	"SetAgentRolePath":     SetAgentRolePath{ProjectID: 7, Role: "coding/reviewer"},
+	"ListAgentRunsPath":    ListAgentRunsPath{ProjectID: 7},
+	"GetAgentRunPath":      GetAgentRunPath{RunID: "run/1"},
+	"RunOutputPath":        RunOutputPath{RunID: "run/1"},
+	"CancelAgentRunPath":   CancelAgentRunPath{RunID: "run/1"},
+	"ListSandboxesPath":    ListSandboxesPath{ProjectID: 7},
 }
 
 var contractQueryDTOs = map[string]url.Values{
-	"ShapeQuery": {"runID": {"run-1", "run-2"}, "from": {"12"}},
+	"ShapeQuery":         {"runID": {"run-1", "run-2"}, "from": {"12"}},
+	"RunOutputQuery":     {"from": {"12"}},
+	"AgentActivityQuery": {"runID": {"run-1", "run-2"}},
 }
 
-func TestRepresentativeDTOJSON(t *testing.T) {
-	value := ReadDaemonLogResponse{Lines: []string{"first", "second"}, NextOffset: 24, OffsetReset: true}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const want = `{"lines":["first","second"],"next_offset":24,"offset_reset":true}`
-	if string(encoded) != want {
-		t.Fatalf("ReadDaemonLogResponse JSON = %s, want %s", encoded, want)
-	}
+func stringPointer(value string) *string { return &value }
 
+func TestRepresentativeDTOJSON(t *testing.T) {
 	request := CreateProjectRequest{Name: "demo", Description: "a project"}
-	encoded, err = json.Marshal(request)
+	encoded, err := json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	const wantRequest = `{"name":"demo","description":"a project"}`
 	if string(encoded) != wantRequest {
 		t.Fatalf("CreateProjectRequest JSON = %s, want %s", encoded, wantRequest)
-	}
-}
-
-func TestBoundDaemonLogRequest(t *testing.T) {
-	bounded, err := BoundDaemonLogRequest(ReadDaemonLogRequest{Offset: 8, Limit: MaxDaemonLogLines + 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bounded.Offset != 8 || bounded.Limit != MaxDaemonLogLines {
-		t.Fatalf("bounded request = %#v", bounded)
-	}
-
-	for _, test := range []struct {
-		name    string
-		request ReadDaemonLogRequest
-		want    error
-	}{
-		{name: "negative offset", request: ReadDaemonLogRequest{Offset: -1, Limit: 1}, want: ErrInvalidLogOffset},
-		{name: "zero limit", request: ReadDaemonLogRequest{Limit: 0}, want: ErrInvalidLogLimit},
-		{name: "negative limit", request: ReadDaemonLogRequest{Limit: -1}, want: ErrInvalidLogLimit},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := BoundDaemonLogRequest(test.request)
-			if !errors.Is(err, test.want) {
-				t.Fatalf("error = %v, want errors.Is(_, %v)", err, test.want)
-			}
-		})
-	}
-}
-
-func TestPageDaemonLog(t *testing.T) {
-	content := []byte("first\nsecond\nthird\npartial")
-
-	page, err := PageDaemonLog(content, ReadDaemonLogRequest{Limit: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(page.Lines, []string{"first", "second"}) || page.NextOffset != int64(len("first\nsecond\n")) {
-		t.Fatalf("first page = %#v", page)
-	}
-
-	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Offset: page.NextOffset, Limit: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(page.Lines, []string{"third"}) || page.NextOffset != int64(len("first\nsecond\nthird\n")) {
-		t.Fatalf("second page = %#v", page)
-	}
-
-	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Offset: 999, Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !page.OffsetReset || page.NextOffset != int64(len("first\n")) {
-		t.Fatalf("reset page = %#v", page)
-	}
-
-	longLine := append(bytes.Repeat([]byte{'x'}, MaxDaemonLogBytes+1), '\n')
-	page, err = PageDaemonLog(longLine, ReadDaemonLogRequest{Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(page.Lines) != 0 || page.NextOffset != int64(len(longLine)) {
-		t.Fatalf("oversized line page = lines %d, next %d", len(page.Lines), page.NextOffset)
-	}
-
-	content = append(longLine, []byte("kept\n")...)
-	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(page.Lines, []string{"kept"}) || page.NextOffset != int64(len(content)) {
-		t.Fatalf("page after oversized line = %#v", page)
 	}
 }
 
