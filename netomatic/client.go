@@ -427,16 +427,19 @@ func (c *HTTPClient) RunIssue(ctx context.Context, request RunIssueRequest) (Run
 	return response, err
 }
 
-func (c *HTTPClient) Reconcile(ctx context.Context, request ReconcileRequest) (ReconcileResponse, error) {
-	var response ReconcileResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/reconcile", true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) RunIssueAgent(ctx context.Context, path RunIssueAgentPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/issues/" + escapePathSegment(path.IssueID) + "/agent-runs"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) Purge(ctx context.Context, request PurgeRequest) (PurgeResponse, error) {
-	var response PurgeResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/purge", true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) ReconcileSandboxes(ctx context.Context, path ProjectPath) error {
+	route := APIPrefix + "/projects/" + escapePathSegment(strconv.FormatUint(uint64(path.ProjectID), 10)) + "/maintenance/reconcile"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, 0)
+}
+
+func (c *HTTPClient) PurgeFinishedWork(ctx context.Context, path ProjectPath) error {
+	route := APIPrefix + "/projects/" + escapePathSegment(strconv.FormatUint(uint64(path.ProjectID), 10)) + "/maintenance/purge"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, 0)
 }
 
 func (c *HTTPClient) ReadDaemonLog(ctx context.Context, offset int64, limit int) (ReadDaemonLogResponse, error) {

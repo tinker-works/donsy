@@ -52,6 +52,9 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 
 	for _, operation = range Contract {
 		t.Run(operation.Name, func(t *testing.T) {
+			if operation.Unavailable {
+				t.Skip("unavailable operations are covered by route-specific error tests")
+			}
 			path := contractTestPath(operation)
 			query := contractTestQuery(operation)
 			request := contractTestRequest(operation)

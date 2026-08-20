@@ -19,18 +19,17 @@ em dash means that the operation has no request body.
 | ProjectSummaries | GET | `/api/v1/projects/{project}/summaries` | `ProjectSummariesRequest` | `ProjectSummariesResponse` |
 | GetSetup | GET | `/api/v1/projects/{project}/setup` | `GetSetupRequest` | `GetSetupResponse` |
 | SaveSetup | PUT | `/api/v1/projects/{project}/setup` | `SaveSetupRequest` | `SaveSetupResponse` |
-| ListEpics | GET | `/api/v1/projects/{project}/epics` | `ListEpicsRequest` | `ListEpicsResponse` |
-| GetEpic | GET | `/api/v1/projects/{project}/epics/{epic}` | `GetEpicRequest` | `GetEpicResponse` |
-| CreateEpic | POST | `/api/v1/projects/{project}/epics` | `CreateEpicRequest` | `CreateEpicResponse` |
-| PrefixEpic | POST | `/api/v1/projects/{project}/epics/{epic}/prefix` | `PrefixEpicRequest` | `PrefixEpicResponse` |
-| TransitionEpic | POST | `/api/v1/projects/{project}/epics/{epic}/transition` | `TransitionEpicRequest` | `TransitionEpicResponse` |
-| CloseEpic | POST | `/api/v1/projects/{project}/epics/{epic}/close` | `CloseEpicRequest` | `CloseEpicResponse` |
-| ListIssues | GET | `/api/v1/projects/{project}/epics/{epic}/issues` | `ListIssuesRequest` | `ListIssuesResponse` |
-| GetIssue | GET | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}` | `GetIssueRequest` | `GetIssueResponse` |
-| CreateIssue | POST | `/api/v1/projects/{project}/epics/{epic}/issues` | `CreateIssueRequest` | `CreateIssueResponse` |
-| UpdateIssue | PUT | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}` | `UpdateIssueRequest` | `UpdateIssueResponse` |
-| TransitionIssue | POST | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}/transition` | `TransitionIssueRequest` | `TransitionIssueResponse` |
-| CloseIssue | POST | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}/close` | `CloseIssueRequest` | `CloseIssueResponse` |
+| ListEpics | GET | `/api/v1/projects/{projectID}/epics` | — | `ListEpicsResponse` |
+| GetEpic | GET | `/api/v1/projects/{projectID}/epics/{epicID}` | — | `Epic` |
+| CreateEpic | POST | `/api/v1/projects/{projectID}/epics` | `CreateEpicRequest` | — |
+| CloseEpic | DELETE | `/api/v1/projects/{projectID}/epics/{epicID}` | — | — |
+| TransitionEpicState | POST | `/api/v1/projects/{projectID}/epics/{epicID}/state-transitions` | `TransitionEpicStateRequest` | — |
+| SetBranchPrefix | PUT | `/api/v1/projects/{projectID}/epics/{epicID}/branch-prefix` | `SetBranchPrefixRequest` | — |
+| CompleteEpic | POST | `/api/v1/projects/{projectID}/epics/{epicID}/complete` | — | `CompleteEpicResponse` |
+| ReviewApprovedBranches | POST | `/api/v1/projects/{projectID}/epics/{epicID}/review-approved-branches` | — | — |
+| RunEpicAgent | POST | `/api/v1/projects/{projectID}/epics/{epicID}/agent-runs` | — | — |
+| CreateIssue | POST | `/api/v1/projects/{projectID}/epics/{epicID}/issues` | `CreateIssueRequest` | — |
+| CloseIssue | DELETE | `/api/v1/projects/{projectID}/epics/{epicID}/issues/{issueID}` | — | — |
 | CreatePullRequest | POST | `/api/v1/projects/{projectID}/epics/{epicID}/pull-requests` | `CreatePullRequestRequest` | — (204) |
 | TransitionPullRequest | POST | `/api/v1/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/state-transitions` | `TransitionPullRequestRequest` | — (204) |
 | GrantCodingRound | POST | `/api/v1/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/coding-rounds` | — | — (204) |
@@ -56,9 +55,16 @@ em dash means that the operation has no request body.
 | ReviewApprovedBranches | POST | `/api/v1/review-approved-branches` | `ReviewApprovedBranchesRequest` | `ReviewApprovedBranchesResponse` |
 | RunEpic | POST | `/api/v1/runs/epic` | `RunEpicRequest` | `RunEpicResponse` |
 | RunIssue | POST | `/api/v1/runs/issue` | `RunIssueRequest` | `RunIssueResponse` |
-| Reconcile | POST | `/api/v1/reconcile` | `ReconcileRequest` | `ReconcileResponse` |
-| Purge | POST | `/api/v1/purge` | `PurgeRequest` | `PurgeResponse` |
 | ReadDaemonLog | GET | `/api/v1/daemon-log` | `ReadDaemonLogRequest` | `ReadDaemonLogResponse` |
+| RunIssueAgent | POST | `/api/v1/projects/{projectID}/epics/{epicID}/issues/{issueID}/agent-runs` | — | — |
+| ReconcileSandboxes | POST | `/api/v1/projects/{projectID}/maintenance/reconcile` | — | — |
+| PurgeFinishedWork | POST | `/api/v1/projects/{projectID}/maintenance/purge` | — | — |
+
+`CreateIssueRequest` contains `parentId`, `title`, `body`, and `repository`.
+`parentId` may be omitted to create the aggregate root, and `body` may be
+empty. Issue creation and closure return `204 No Content`. Manual issue-agent
+execution is registered but currently returns `501 Not Implemented` with the
+`feature_not_configured` error code.
 
 ## Daemon Log
 
@@ -77,3 +83,11 @@ next request. If the log was truncated or rotated and the requested offset is
 past the current file size, the daemon starts at byte zero and sets
 `offset_reset` to `true`. When no record is consumed, `next_offset` remains the
 effective starting offset, so polling at EOF is stable.
+`RunOutput` accepts an optional non-negative `from` query value. `AgentActivity`
+uses repeated `runID` query values and returns the `sizes` map directly. Both
+operations send an empty query when no values are supplied.
+
+`ReconcileSandboxes` and `PurgeFinishedWork` are registered but currently
+unavailable until the worker coordinator is shared. Go Merge returns HTTP 501
+with `code: "feature_not_configured"` and the operation-specific `detail`; the
+client exposes this as `ErrUnavailable`.
