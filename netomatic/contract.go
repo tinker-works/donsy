@@ -159,25 +159,23 @@ type ProcessResponse struct {
 }
 
 type Project struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
-	Open        bool   `json:"open,omitempty"`
+	ID           uint
+	Name         string
+	LastOpenedAt string
 }
 
 type ProjectSummary struct {
-	Project          string `json:"project"`
-	EpicCount        int    `json:"epic_count"`
-	IssueCount       int    `json:"issue_count"`
-	PullRequestCount int    `json:"pull_request_count"`
+	Project Project   `json:"project"`
+	Epics   int       `json:"epics"`
+	Running int       `json:"running"`
+	Error   *APIError `json:"error,omitempty"`
 }
 
-type Setup struct {
-	Project      string   `json:"project"`
-	Repository   string   `json:"repository,omitempty"`
-	Organisation string   `json:"organisation,omitempty"`
-	Agent        string   `json:"agent,omitempty"`
-	Variants     []string `json:"variants,omitempty"`
-	Complete     bool     `json:"complete"`
+type SetupState struct {
+	Organisations int
+	Repositories  int
+	RolesSet      int
+	RolesTotal    int
 }
 
 type Epic struct {
@@ -286,49 +284,20 @@ type RunOutput struct {
 	Done   bool   `json:"done"`
 }
 
-// ListProjectsResponse and the other response wrappers keep the wire shape
-// explicit. This avoids coupling clients to a server's choice of JSON array
-// representation and leaves room for pagination metadata later.
-type ListProjectsResponse struct {
-	Projects []Project `json:"projects"`
+type ProjectPath struct {
+	ProjectID uint
 }
+
+type ListProjectsResponse []Project
 type CreateProjectRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description,omitempty"`
+	Name string `json:"name"`
 }
-type CreateProjectResponse struct {
-	Project Project `json:"project"`
-}
-type OpenProjectRequest struct {
-	Project string `json:"project"`
-}
-type OpenProjectResponse struct {
-	Project Project `json:"project"`
-}
-type ForgetProjectRequest struct {
-	Project string `json:"project"`
-}
-type ForgetProjectResponse struct {
-	Forgotten bool `json:"forgotten"`
-}
-type ProjectSummariesRequest struct {
-	Project string `json:"project"`
-}
-type ProjectSummariesResponse struct {
-	Summaries []ProjectSummary `json:"summaries"`
-}
-type GetSetupRequest struct {
-	Project string `json:"project"`
-}
-type GetSetupResponse struct {
-	Setup Setup `json:"setup"`
-}
-type SaveSetupRequest struct {
-	Project string `json:"project"`
-	Setup   Setup  `json:"setup"`
-}
-type SaveSetupResponse struct {
-	Setup Setup `json:"setup"`
+type CreateProjectResponse = Project
+type ListProjectSummariesResponse []ProjectSummary
+type InitialiseStoreRequest struct {
+	Model        string   `json:"model"`
+	Variant      string   `json:"variant"`
+	Repositories []string `json:"repositories"`
 }
 type ListEpicsRequest struct {
 	Project string `json:"project"`
@@ -712,11 +681,11 @@ type Client interface {
 	Process(context.Context) (ProcessResponse, error)
 	ListProjects(context.Context) (ListProjectsResponse, error)
 	CreateProject(context.Context, CreateProjectRequest) (CreateProjectResponse, error)
-	OpenProject(context.Context, OpenProjectRequest) (OpenProjectResponse, error)
-	ForgetProject(context.Context, ForgetProjectRequest) (ForgetProjectResponse, error)
-	ProjectSummaries(context.Context, ProjectSummariesRequest) (ProjectSummariesResponse, error)
-	GetSetup(context.Context, GetSetupRequest) (GetSetupResponse, error)
-	SaveSetup(context.Context, SaveSetupRequest) (SaveSetupResponse, error)
+	OpenProject(context.Context, ProjectPath) error
+	ForgetProject(context.Context, ProjectPath) error
+	ListProjectSummaries(context.Context) (ListProjectSummariesResponse, error)
+	StoreSetup(context.Context, ProjectPath) (SetupState, error)
+	InitialiseStore(context.Context, ProjectPath, InitialiseStoreRequest) error
 	ListEpics(context.Context, ListEpicsRequest) (ListEpicsResponse, error)
 	GetEpic(context.Context, GetEpicRequest) (GetEpicResponse, error)
 	CreateEpic(context.Context, CreateEpicRequest) (CreateEpicResponse, error)
@@ -790,12 +759,12 @@ const (
 var Contract = []Operation{
 	{Name: "Process", Method: MethodGet, Route: routeProcess, Response: "ProcessResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListProjects", Method: MethodGet, Route: APIPrefix + "/projects", Response: "ListProjectsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "CreateProject", Method: MethodPost, Route: APIPrefix + "/projects", Request: "CreateProjectRequest", Response: "CreateProjectResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "OpenProject", Method: MethodPost, Route: APIPrefix + "/projects/{project}/open", Request: "OpenProjectRequest", Response: "OpenProjectResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ForgetProject", Method: MethodDelete, Route: APIPrefix + "/projects/{project}", Request: "ForgetProjectRequest", Response: "ForgetProjectResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ProjectSummaries", Method: MethodGet, Route: APIPrefix + "/projects/{project}/summaries", Request: "ProjectSummariesRequest", Response: "ProjectSummariesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GetSetup", Method: MethodGet, Route: APIPrefix + "/projects/{project}/setup", Request: "GetSetupRequest", Response: "GetSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "SaveSetup", Method: MethodPut, Route: APIPrefix + "/projects/{project}/setup", Request: "SaveSetupRequest", Response: "SaveSetupResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "CreateProject", Method: MethodPost, Route: APIPrefix + "/projects", Request: "CreateProjectRequest", Response: "CreateProjectResponse", SuccessStatus: http.StatusCreated, Authenticated: true},
+	{Name: "OpenProject", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/open", Path: "ProjectPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "ForgetProject", Method: MethodDelete, Route: APIPrefix + "/projects/{projectID}", Path: "ProjectPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "ListProjectSummaries", Method: MethodGet, Route: APIPrefix + "/projects/summaries", Response: "ListProjectSummariesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "StoreSetup", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/setup", Path: "ProjectPath", Response: "SetupState", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "InitialiseStore", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/setup", Path: "ProjectPath", Request: "InitialiseStoreRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics", Request: "ListEpicsRequest", Response: "ListEpicsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{project}/epics/{epic}", Request: "GetEpicRequest", Response: "GetEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{project}/epics", Request: "CreateEpicRequest", Response: "CreateEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},

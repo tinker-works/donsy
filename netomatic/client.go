@@ -148,43 +148,36 @@ func (c *HTTPClient) ListProjects(ctx context.Context) (ListProjectsResponse, er
 
 func (c *HTTPClient) CreateProject(ctx context.Context, request CreateProjectRequest) (CreateProjectResponse, error) {
 	var response CreateProjectResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/projects", true, nil, request, &response, http.StatusOK)
+	err := c.do(ctx, MethodPost, APIPrefix+"/projects", true, nil, request, &response, http.StatusCreated)
 	return response, err
 }
 
-func (c *HTTPClient) OpenProject(ctx context.Context, request OpenProjectRequest) (OpenProjectResponse, error) {
-	var response OpenProjectResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/open"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) OpenProject(ctx context.Context, path ProjectPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/open"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) ForgetProject(ctx context.Context, path ProjectPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10)
+	return c.do(ctx, MethodDelete, route, true, nil, nil, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) ListProjectSummaries(ctx context.Context) (ListProjectSummariesResponse, error) {
+	var response ListProjectSummariesResponse
+	err := c.do(ctx, MethodGet, APIPrefix+"/projects/summaries", true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) ForgetProject(ctx context.Context, request ForgetProjectRequest) (ForgetProjectResponse, error) {
-	var response ForgetProjectResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project)
-	err := c.do(ctx, MethodDelete, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) StoreSetup(ctx context.Context, path ProjectPath) (SetupState, error) {
+	var response SetupState
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/setup"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) ProjectSummaries(ctx context.Context, request ProjectSummariesRequest) (ProjectSummariesResponse, error) {
-	var response ProjectSummariesResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/summaries"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) GetSetup(ctx context.Context, request GetSetupRequest) (GetSetupResponse, error) {
-	var response GetSetupResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/setup"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) SaveSetup(ctx context.Context, request SaveSetupRequest) (SaveSetupResponse, error) {
-	var response SaveSetupResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/setup"
-	err := c.do(ctx, MethodPut, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) InitialiseStore(ctx context.Context, path ProjectPath, request InitialiseStoreRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/setup"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
 func (c *HTTPClient) ListEpics(ctx context.Context, request ListEpicsRequest) (ListEpicsResponse, error) {
