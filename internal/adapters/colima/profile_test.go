@@ -166,6 +166,30 @@ func TestClient_EnsureProfile_ShouldFailWhenThePreparationFails(t *testing.T) {
 	}
 }
 
+func TestClient_EnsureProfile_ShouldRetryPreparationOnARunningProfile(t *testing.T) {
+	// Arrange: preparation can fail after colima has successfully started the
+	// VM, leaving the next attempt to observe a running but unsafe profile.
+	runner := newFakeRunner()
+	client := clientWith(t, runner)
+	runner.answer("colima ssh", response{err: context.Canceled})
+
+	// Act
+	if _, err := client.ensureProfile(context.Background(), 7); err == nil {
+		t.Fatal("expected the first preparation attempt to fail")
+	}
+	runner.answer("colima ssh", response{})
+	_, err := client.ensureProfile(context.Background(), 7)
+
+	// Assert
+	if err != nil {
+		t.Fatal(err)
+	}
+	if runner.count("colima ssh") != 2 {
+		t.Fatalf("expected preparation retried on the running profile:\n%s",
+			strings.Join(runner.lines(), "\n"))
+	}
+}
+
 func TestClient_StopProfile_ShouldRefuseWhileAContainerIsRunning(t *testing.T) {
 	// Arrange: the caller decides from a snapshot taken at the top of a tick,
 	// so only the daemon can say what is running now.

@@ -49,8 +49,8 @@ const colimaGateway = "192.168.5.2"
 // That makes it idempotent by construction rather than by care.
 //
 // What it does not cover: DOCKER-USER hooks FORWARD, so traffic addressed to
-// the VM itself is not filtered. A round holding the docker socket is already
-// inside that boundary, which is why the profile is per project.
+// the VM itself is not filtered. The profile is still per project because its
+// daemon and host mount are the outer boundary around every sandbox.
 func prepareScript() string {
 	var builder strings.Builder
 	builder.WriteString("set -eu\n")
@@ -96,19 +96,4 @@ func (c *Client) prepareProfile(ctx context.Context, profile string) error {
 		return fmt.Errorf("prepare Colima profile %q: %w", profile, err)
 	}
 	return nil
-}
-
-// dockerSocketGID reads the group that owns the profile's docker socket.
-//
-// The number is assigned when the VM's image is built, so it is read rather
-// than assumed. An unreadable socket is not an error: the group is only used to
-// let a non-root agent reach the daemon, and a round that does not ask for the
-// socket does not care.
-func (c *Client) dockerSocketGID(ctx context.Context, profile string) string {
-	output, err := c.boundedOutput(ctx, listTimeout,
-		"colima", "ssh", "--profile", profile, "--", "stat", "-c", "%g", "/var/run/docker.sock")
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(output))
 }

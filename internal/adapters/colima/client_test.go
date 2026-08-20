@@ -97,7 +97,7 @@ func TestClient_Ensure_ShouldCreateTheContainerAgainstItsProjectsProfile(t *test
 
 func TestCreateArgs_ShouldLimitMemoryWithoutLimitingCPU(t *testing.T) {
 	// Arrange
-	args := createArgs(testSpec(t), "image", "")
+	args := createArgs(testSpec(t), "image")
 
 	// Act, Assert
 	joined := strings.Join(args, " ")
@@ -288,7 +288,7 @@ func TestClient_Ensure_ShouldRejectAnArbitraryOutOfRootGuestMount(t *testing.T) 
 	}
 }
 
-func TestClient_Ensure_ShouldBindTheDockerSocketOnlyWhenAsked(t *testing.T) {
+func TestClient_Ensure_ShouldConfigureNestedDockerOnlyWhenAsked(t *testing.T) {
 	// Arrange
 	for _, wanted := range []bool{false, true} {
 		spec := testSpec(t)
@@ -303,9 +303,13 @@ func TestClient_Ensure_ShouldBindTheDockerSocketOnlyWhenAsked(t *testing.T) {
 		}
 
 		// Assert
-		if got := runner.ran("/var/run/docker.sock:/var/run/docker.sock"); got != wanted {
-			t.Fatalf("InstallDocker=%v bound the socket=%v:\n%s",
+		if got := runner.ran("GO_MERGE_INSTALL_DOCKER=1"); got != wanted {
+			t.Fatalf("InstallDocker=%v configured nested Docker=%v:\n%s",
 				wanted, got, strings.Join(runner.lines(), "\n"))
+		}
+		if runner.ran("/var/run/docker.sock:/var/run/docker.sock") || runner.ran("--group-add") {
+			t.Fatalf("expected no profile Docker socket exposure:\n%s",
+				strings.Join(runner.lines(), "\n"))
 		}
 	}
 }

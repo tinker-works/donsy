@@ -44,7 +44,7 @@ func sessionVolume(name string) string {
 // Everything that cannot be changed on an existing container is decided here —
 // the binds above all — which is why the result is fingerprinted and the
 // fingerprint is what Ensure compares against.
-func createArgs(spec agent_runtime.SandboxSpec, image, socketGID string) []string {
+func createArgs(spec agent_runtime.SandboxSpec, image string) []string {
 	args := []string{
 		"create",
 		"--name", spec.Sandbox.Name,
@@ -58,20 +58,15 @@ func createArgs(spec agent_runtime.SandboxSpec, image, socketGID string) []strin
 		args = append(args, "--volume", mount)
 	}
 	if spec.InstallDocker {
-		// The profile's own daemon, so a repository's test suite can start
-		// containers. They are siblings of this one rather than children: there
-		// is no engine in here, only the client.
-		//
-		// This is a real widening. A round can reach every container in its
-		// project's profile and mount any path the VM can see. The boundary is
-		// the profile, which is why there is one per project.
-		args = append(args, "--volume", "/var/run/docker.sock:/var/run/docker.sock")
-		if socketGID != "" {
-			// The socket is root:docker and the agent is neither. The group's
-			// numeric ID is assigned when the VM is built, so it is probed
-			// rather than assumed.
-			args = append(args, "--group-add", socketGID)
-		}
+		// A profile socket would let the agent ask the VM daemon to bind any
+		// path in the shared host mount. The image starts a rootless daemon in
+		// this container instead, so child containers can see only this
+		// sandbox's own filesystem and mounts.
+		args = append(args,
+			"--env", "GO_MERGE_INSTALL_DOCKER=1",
+			"--env", "DOCKER_HOST=unix:///tmp/go-merge-docker/docker.sock",
+			"--env", "XDG_RUNTIME_DIR=/tmp/go-merge-docker",
+		)
 	}
 	return append(args, image)
 }

@@ -48,7 +48,7 @@ const (
 	// otherwise keep starting containers built by the recipe as it was, however
 	// far renderDockerfile has since moved on. Bump it whenever the template
 	// changes in a way existing hosts must pick up.
-	buildVersion = 3
+	buildVersion = 4
 
 	// Ubuntu is pinned to its LTS release so an image build does not silently
 	// move to another release.
@@ -84,25 +84,25 @@ func renderDockerfile(spec agent_runtime.SandboxSpec) string {
 }
 
 // packagesFor installs what a checkout needs before a repository's own script
-// runs: a shell the OpenCode installer can use, git, curl, ripgrep, and the
-// docker *client*.
+// runs: a shell the OpenCode installer can use, git, curl, ripgrep, and a
+// rootless Docker client and daemon.
 //
-// The client, not the engine. The daemon is the profile's, reached over the
-// socket bound into the container, so a repository whose tests start containers
-// gets them as siblings rather than through a nested engine — which is what
-// makes this a package install instead of the cgroup and init-script work
-// running dockerd inside a guest used to need.
+// The daemon runs inside the sandbox rather than being the profile's daemon.
+// This prevents a repository's tests from using Docker API access to bind the
+// profile's shared host mount and read another sandbox's files.
 func packagesFor() string {
 	return `ENV DEBIAN_FRONTEND=noninteractive
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      bash git curl ca-certificates tar unzip ripgrep docker.io \
+       bash git curl ca-certificates tar unzip ripgrep docker.io rootlesskit slirp4netns uidmap \
  && rm -rf /var/lib/apt/lists/*`
 }
 
 func accountFor() string {
 	return "RUN useradd --create-home --home-dir " + guestHome +
-		" --shell /bin/bash " + guestUser
+		" --shell /bin/bash " + guestUser +
+		" && printf '" + guestUser + ":100000:65536\\n' >> /etc/subuid" +
+		" && printf '" + guestUser + ":100000:65536\\n' >> /etc/subgid"
 }
 
 // agentCLIStep installs the pinned OpenCode standalone binary. The official
@@ -208,6 +208,40 @@ const (
 func initScript() string {
 	return `#!/bin/sh
 set -eu
+rm -f ` + readyMarker + `
+if [ "${GO_MERGE_INSTALL_DOCKER:-0}" = "1" ]; then
+  export XDG_RUNTIME_DIR=/tmp/go-merge-docker
+  export DOCKER_HOST=unix://$XDG_RUNTIME_DIR/docker.sock
+  install -d -m 700 "$XDG_RUNTIME_DIR"
+  rm -f "$XDG_RUNTIME_DIR/docker.sock"
+  rm -rf "$XDG_RUNTIME_DIR/rootlesskit"
+  rootlesskit \
+    --state-dir="$XDG_RUNTIME_DIR/rootlesskit" \
+    --net=slirp4netns --mtu=65520 --disable-host-loopback \
+    --port-driver=builtin --copy-up=/etc --copy-up=/run --propagation=rslave \
+    dockerd --host="$DOCKER_HOST" --storage-driver=vfs \
+    >"$XDG_RUNTIME_DIR/dockerd.log" 2>&1 &
+  daemon_pid=$!
+  daemon_ready=0
+  attempts=0
+  while [ "$attempts" -lt 120 ]; do
+    if docker info >/dev/null 2>&1; then
+      daemon_ready=1
+      break
+    fi
+    if ! kill -0 "$daemon_pid" 2>/dev/null; then
+      cat "$XDG_RUNTIME_DIR/dockerd.log" >&2
+      exit 1
+    fi
+    attempts=$((attempts + 1))
+    sleep 0.25
+  done
+  if [ "$daemon_ready" -ne 1 ]; then
+    cat "$XDG_RUNTIME_DIR/dockerd.log" >&2
+    kill "$daemon_pid" 2>/dev/null || true
+    exit 1
+  fi
+fi
 if [ -f ` + guestCredentials + `/auth.json ]; then
   install -d -m 700 "$HOME/.local/share/opencode"
   install -m 600 ` + guestCredentials + `/auth.json "$HOME/.local/share/opencode/auth.json"

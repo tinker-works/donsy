@@ -114,6 +114,49 @@ func advanceRemoteMaster(t *testing.T, remote, name, body, message string) strin
 	return head.Hash().String()
 }
 
+func advanceRemoteBranch(t *testing.T, remote, branch, name, body, message string) string {
+	t.Helper()
+	path := t.TempDir()
+	repository, err := git.PlainClone(path, false, &git.CloneOptions{URL: remote})
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktree, err := repository.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	remoteReference, err := repository.Reference(
+		plumbing.NewRemoteReferenceName("origin", branch), true,
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	localReference := plumbing.NewBranchReferenceName(branch)
+	if err := repository.Storer.SetReference(
+		plumbing.NewHashReference(localReference, remoteReference.Hash()),
+	); err != nil {
+		t.Fatal(err)
+	}
+	if err := worktree.Checkout(&git.CheckoutOptions{
+		Branch: localReference,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	commit(t, path, worktree, name, body, message)
+	ref := plumbing.NewBranchReferenceName(branch)
+	if err := repository.Push(&git.PushOptions{
+		RemoteName: "origin",
+		RefSpecs:   []config.RefSpec{config.RefSpec(ref.String() + ":" + ref.String())},
+	}); err != nil {
+		t.Fatal(err)
+	}
+	head, err := repository.Head()
+	if err != nil {
+		t.Fatal(err)
+	}
+	return head.Hash().String()
+}
+
 // remoteBranchHash reads a branch tip straight from the bare remote, so
 // assertions describe what everyone else can see rather than a local ref.
 func remoteBranchHash(t *testing.T, remote, branch string) (string, error) {
@@ -362,6 +405,43 @@ func TestCodeWorkspace_Merge_ShouldFastForwardBaseToHead(t *testing.T) {
 	}
 }
 
+func TestCodeWorkspace_Merge_ShouldUseTheRemoteHeadTip(t *testing.T) {
+	// Arrange: the published head advances after this checkout last fetched it.
+	workspace, remote, checkout := localCodeWorkspace(t)
+	path, err := workspace.Checkout(context.Background(), checkout, "go-merge/issue-1", "master")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "widget.go"), []byte("package widget\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.CommitAll(checkout, "ai: round 1 on issue issue-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Push(context.Background(), checkout, "go-merge/issue-1"); err != nil {
+		t.Fatal(err)
+	}
+	advancedHead := advanceRemoteBranch(
+		t, remote, "go-merge/issue-1", "later.go", "package later\n", "agent: later round",
+	)
+
+	// Act
+	err = workspace.Merge(context.Background(), checkout, "go-merge/issue-1", "master")
+
+	// Assert: Merge fast-forwards base to the current remote head, not the stale
+	// local branch ref left by the earlier Push.
+	if err != nil {
+		t.Fatal(err)
+	}
+	master, err := remoteBranchHash(t, remote, "master")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if master != advancedHead {
+		t.Fatalf("expected remote master at the advanced head %s, got %s", advancedHead, master)
+	}
+}
+
 func TestCodeWorkspace_Merge_ShouldReportAMovedBaseAsAConflict(t *testing.T) {
 	// Arrange: base gains a commit after the round's branch was cut, so the
 	// branch no longer contains base and cannot be fast-forwarded onto it.
@@ -375,6 +455,9 @@ func TestCodeWorkspace_Merge_ShouldReportAMovedBaseAsAConflict(t *testing.T) {
 		t.Fatal(err)
 	}
 	if _, err := workspace.CommitAll(checkout, "ai: round 1 on issue issue-1"); err != nil {
+		t.Fatal(err)
+	}
+	if err := workspace.Push(context.Background(), checkout, "go-merge/issue-1"); err != nil {
 		t.Fatal(err)
 	}
 	hotfix := advanceRemoteMaster(t, remote, "hotfix.txt", "hotfix\n", "base: hotfix")

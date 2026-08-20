@@ -121,18 +121,19 @@ func TestRenderDockerfile_ShouldUseTheUbuntuRecipe(t *testing.T) {
 	}
 }
 
-// The daemon is the profile's, reached over a bound socket, so the image needs
-// the client and not the engine.
-func TestRenderDockerfile_ShouldInstallTheDockerClientNotTheEngine(t *testing.T) {
+// Docker runs inside the sandbox rather than through the profile daemon, so the
+// image needs the rootless engine and its user-namespace networking support.
+func TestRenderDockerfile_ShouldInstallRootlessDockerDependencies(t *testing.T) {
 	// Arrange, Act
 	dockerfile := renderDockerfile(agent_runtime.SandboxSpec{})
 
 	// Assert
-	indexOf(t, dockerfile, "docker.io")
-	for _, absent := range []string{"docker-openrc", "rc-service", "get.docker.com"} {
-		if strings.Contains(dockerfile, absent) {
-			t.Fatalf("expected no engine install, found %q", absent)
-		}
+	for _, dependency := range []string{"docker.io", "rootlesskit", "slirp4netns", "uidmap"} {
+		indexOf(t, dockerfile, dependency)
+	}
+	indexOf(t, dockerfile, "gomerge:100000:65536")
+	if strings.Contains(dockerfile, "/var/run/docker.sock") {
+		t.Fatal("expected no profile Docker socket in the sandbox image")
 	}
 }
 
@@ -152,6 +153,22 @@ func TestInitScript_ShouldStageCredentialsAndSignalReady(t *testing.T) {
 	if !strings.HasSuffix(strings.TrimSpace(script), `exec "$@"`) {
 		t.Fatalf("expected the init to exec the container's command last:\n%s", script)
 	}
+}
+
+func TestInitScript_ShouldWaitForNestedDockerBeforeSignallingReady(t *testing.T) {
+	// Arrange, Act
+	script := initScript()
+
+	// Assert: a started container is not ready until its requested nested daemon
+	// answers, otherwise the first Docker command races daemon startup.
+	docker := indexOf(t, script, "docker info")
+	ready := indexOf(t, script, ": > "+readyMarker)
+	if docker > ready {
+		t.Fatalf("expected nested Docker to be ready before the marker:\n%s", script)
+	}
+	indexOf(t, script, "GO_MERGE_INSTALL_DOCKER")
+	indexOf(t, script, "rootlesskit")
+	indexOf(t, script, "dockerd --host=\"$DOCKER_HOST\" --storage-driver=vfs")
 }
 
 func TestSetupScriptContent_ShouldPassARepositoryScriptThrough(t *testing.T) {

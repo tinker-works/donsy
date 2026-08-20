@@ -464,7 +464,7 @@ func (w CodeWorkspace) Merge(
 	if err != nil {
 		return err
 	}
-	headCommit, err := resolveCommit(repository, head)
+	headCommit, err := resolveCommit(repository, "origin/"+head)
 	if err != nil {
 		return err
 	}

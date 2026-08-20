@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/tinker-works/donsy/internal/application"
 	"github.com/tinker-works/donsy/internal/application/agent_runtime"
@@ -95,20 +96,29 @@ func (w AgentWorkspace) ensureLocked(
 		if err != nil {
 			return "", err
 		}
-		if err := resetWorktree(path, worktree); err != nil {
+		// Drop unpublished work before fetching. Besides restoring the checkout,
+		// this keeps a local-only commit out of go-git's fetch negotiation: the
+		// remote cannot advertise an object it has never received.
+		if err := resetWorktree(path, repositoryHandle, worktree); err != nil {
 			return "", fmt.Errorf("reset repository %q: %w", repository, err)
 		}
 		// The refresh needs the same identity the clone used. Without it go-git
 		// falls back to the SSH agent, which fails outright on a host whose
 		// agent holds no keys — so a repository that cloned fine would stop
-		// updating, and only on the second visit.
+		// updating, and only on the second visit. Fetch and reset again so the
+		// checkout is restored to the refreshed remote-tracking ref.
 		auth, err := repositoryAuth(repositoryHandle)
 		if err != nil {
 			return "", err
 		}
-		pullErr := worktree.PullContext(ctx, &git.PullOptions{RemoteName: "origin", Auth: auth})
-		if pullErr != nil && pullErr != git.NoErrAlreadyUpToDate {
-			return "", fmt.Errorf("refresh repository %q: %w", repository, pullErr)
+		fetchErr := repositoryHandle.FetchContext(ctx, &git.FetchOptions{
+			RemoteName: "origin", Auth: auth,
+		})
+		if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
+			return "", fmt.Errorf("refresh repository %q: %w", repository, fetchErr)
+		}
+		if err := resetWorktree(path, repositoryHandle, worktree); err != nil {
+			return "", fmt.Errorf("reset repository %q: %w", repository, err)
 		}
 	}
 	return path, nil
@@ -116,8 +126,8 @@ func (w AgentWorkspace) ensureLocked(
 
 // resetWorktree discards a previous round's source edits and build outputs before
 // refreshing the disposable checkout. go-git's Clean keeps ignored files, so remove
-// every worktree entry except .git before restoring the current commit.
-func resetWorktree(path string, worktree *git.Worktree) error {
+// every worktree entry except .git before restoring the remote-tracking commit.
+func resetWorktree(path string, repository *git.Repository, worktree *git.Worktree) error {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return err
@@ -130,7 +140,20 @@ func resetWorktree(path string, worktree *git.Worktree) error {
 			return err
 		}
 	}
-	return worktree.Reset(&git.ResetOptions{Mode: git.HardReset})
+	head, err := repository.Head()
+	if err != nil {
+		return err
+	}
+	if !head.Name().IsBranch() {
+		return fmt.Errorf("checkout is not on a local branch")
+	}
+	remoteHead, err := repository.Reference(
+		plumbing.NewRemoteReferenceName("origin", head.Name().Short()), true,
+	)
+	if err != nil {
+		return fmt.Errorf("resolve origin/%s: %w", head.Name().Short(), err)
+	}
+	return worktree.Reset(&git.ResetOptions{Commit: remoteHead.Hash(), Mode: git.HardReset})
 }
 
 // Purge removes the whole directory an epic holds here. That is both the clones

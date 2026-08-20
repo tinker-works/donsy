@@ -38,6 +38,10 @@ type Client struct {
 	// profileMu guards profiles, the per-profile locks themselves.
 	profileMu sync.Mutex
 	profiles  map[string]*sync.Mutex
+	// prepared records profiles whose daemon configuration and firewall have
+	// completed successfully during this process. A failed preparation can
+	// leave a VM running, so the next Ensure must not mistake that for ready.
+	prepared map[string]bool
 
 	// admission guards reserved, the CPU and memory this process has admitted
 	// but the provider does not report as running yet. See Reserve.
@@ -59,12 +63,14 @@ func NewClient(logDir, hostRoot, stateDir, buildDir string) *Client {
 	return &Client{
 		runner: execRunner{}, logDir: logDir, hostRoot: hostRoot,
 		stateDir: stateDir, buildDir: buildDir,
-		profiles: map[string]*sync.Mutex{},
+		profiles: map[string]*sync.Mutex{}, prepared: map[string]bool{},
 	}
 }
 
 func newClient(runner commandRunner, dirs ...string) *Client {
-	client := &Client{runner: runner, profiles: map[string]*sync.Mutex{}}
+	client := &Client{
+		runner: runner, profiles: map[string]*sync.Mutex{}, prepared: map[string]bool{},
+	}
 	for index, target := range []*string{
 		&client.logDir, &client.hostRoot, &client.stateDir, &client.buildDir,
 	} {
@@ -197,13 +203,7 @@ func (c *Client) Ensure(ctx context.Context, spec agent_runtime.SandboxSpec) (bo
 	}); err != nil {
 		return false, err
 	}
-	socketGID := ""
-	if spec.InstallDocker {
-		socketGID = c.dockerSocketGID(ctx, profile)
-	}
-	if err := c.docker(
-		ctx, profile, createTimeout, createArgs(spec, image, socketGID)...,
-	); err != nil {
+	if err := c.docker(ctx, profile, createTimeout, createArgs(spec, image)...); err != nil {
 		return false, err
 	}
 	return created, nil

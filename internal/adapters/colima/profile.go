@@ -16,11 +16,10 @@ import (
 
 // A profile is one Colima VM, and go-merge gives every project its own.
 //
-// The alternative — one VM for the whole host — was rejected for isolation: a
-// round is handed the profile's docker socket so a repository's own test suite
-// can start containers, which makes it root-equivalent inside that VM. Scoping
-// the VM to the project bounds what that reaches to work the same project
-// already had access to.
+// The alternative — one VM for the whole host — was rejected for isolation:
+// every project's VM has its own Docker daemon and the nested daemon used by a
+// round is confined to that round's container. Scoping the VM to the project
+// bounds what the runtime itself can reach.
 //
 // The cost is that Docker's layer cache lives inside each VM, so the first
 // round of each project pays a full image build.
@@ -174,32 +173,43 @@ func (c *Client) startProfileLocked(ctx context.Context, profile string) error {
 	if err != nil {
 		return err
 	}
-	if running {
+	if running && c.prepared[profile] {
 		return nil
 	}
-	cpus, memory := profileSize()
-	args := []string{
-		"start", "--profile", profile,
-		// Without this colima makes its own docker context the active one, and
-		// every `docker` the user types afterwards talks to an agent's VM.
-		"--activate=false",
-		"--runtime", "docker",
-		"--vm-type", vmType(),
-		"--cpus", strconv.Itoa(cpus),
-		"--memory", strconv.Itoa(memory),
-		"--disk", strconv.Itoa(profileDiskGiB),
-		"--mount-type", "virtiofs",
-		// One mount, and it replaces colima's default of the whole home
-		// directory writable. Everything a sandbox binds — the credentials, the
-		// issue trees, the checkouts — lives under this one root, and the guest
-		// sees it at the same absolute path.
-		"--mount", c.hostRoot + ":w",
+	if !running {
+		cpus, memory := profileSize()
+		args := []string{
+			"start", "--profile", profile,
+			// Without this colima makes its own docker context the active one, and
+			// every `docker` the user types afterwards talks to an agent's VM.
+			"--activate=false",
+			"--runtime", "docker",
+			"--vm-type", vmType(),
+			"--cpus", strconv.Itoa(cpus),
+			"--memory", strconv.Itoa(memory),
+			"--disk", strconv.Itoa(profileDiskGiB),
+			"--mount-type", "virtiofs",
+			// One mount, and it replaces colima's default of the whole home
+			// directory writable. Everything a sandbox binds — the credentials, the
+			// issue trees, the checkouts — lives under this one root, and the guest
+			// sees it at the same absolute path.
+			"--mount", c.hostRoot + ":w",
+		}
+		if err := c.bounded(ctx, profileStartTimeout, "colima", args...); err != nil {
+			return fmt.Errorf("start Colima profile %q: %w", profile, err)
+		}
+		// A newly started VM always needs preparation, even if this Client
+		// prepared the profile during an earlier run.
+		c.prepared[profile] = false
 	}
-	if err := c.bounded(ctx, profileStartTimeout, "colima", args...); err != nil {
-		return fmt.Errorf("start Colima profile %q: %w", profile, err)
+	if !c.prepared[profile] {
+		if err := c.prepareProfile(ctx, profile); err != nil {
+			return err
+		}
+		c.prepared[profile] = true
 	}
-	if err := c.prepareProfile(ctx, profile); err != nil {
-		return err
+	if running {
+		return nil
 	}
 	return c.pruneOrphanContainers(ctx, profile)
 }
@@ -228,6 +238,7 @@ func (c *Client) StopProfile(ctx context.Context, projectID uint) (bool, error) 
 	if err := c.bounded(ctx, profileStopTimeout, "colima", "stop", "--profile", profile); err != nil {
 		return false, err
 	}
+	c.prepared[profile] = false
 	return true, nil
 }
 
@@ -296,5 +307,6 @@ func (c *Client) DeleteProfile(ctx context.Context, projectID uint) error {
 	); err != nil {
 		return err
 	}
+	delete(c.prepared, profile)
 	return c.forgetProjectRecords(projectID)
 }

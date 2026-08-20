@@ -176,6 +176,40 @@ func TestAgentWorkspace_Ensure_ShouldResetChangesAndBuildOutputsBeforeRefreshing
 	}
 }
 
+func TestAgentWorkspace_Ensure_ShouldResetACommitMadeInTheLocalClone(t *testing.T) {
+	// Arrange: a writable mount can leave a commit behind even though the agent
+	// never published it. The remote then advances independently.
+	workspace, remote := localAgentWorkspace(t)
+	path, err := workspace.Ensure(context.Background(), "epic-1", "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	repository, err := git.PlainOpen(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	worktree, err := repository.Worktree()
+	if err != nil {
+		t.Fatal(err)
+	}
+	commit(t, path, worktree, "unpublished.txt", "local\n", "agent: unpublished")
+	advanceRemoteMaster(t, remote, "published.txt", "remote\n", "base: published")
+
+	// Act
+	_, err = workspace.Ensure(context.Background(), "epic-1", "acme/widgets")
+
+	// Assert: refresh follows origin/master, discarding the local-only commit.
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "unpublished.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected the unpublished commit to be discarded, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "published.txt")); err != nil {
+		t.Fatalf("expected the remote commit to be checked out: %v", err)
+	}
+}
+
 // Every round of an epic calls Ensure for each of its repositories, and rounds
 // run concurrently. go-git has no equivalent of git's index.lock, so without
 // serializing, two clones racing into one directory interleave their writes to
