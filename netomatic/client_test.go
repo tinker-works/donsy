@@ -212,6 +212,75 @@ func TestHTTPClientPullRequestUnavailableFeaturesDecode501(t *testing.T) {
 	}
 }
 
+func TestHTTPClientRepositoryFeaturesDecode501(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var wantMethod string
+		var detail string
+		switch r.URL.EscapedPath() {
+		case APIPrefix + "/organisations/discovery":
+			wantMethod = http.MethodPost
+			detail = "organisation discovery is not configured for this process"
+		case APIPrefix + "/repositories":
+			wantMethod = http.MethodGet
+			detail = "repository listing is not configured for this process"
+		case APIPrefix + "/repositories/sync":
+			wantMethod = http.MethodPost
+			detail = "repository sync is not configured for this process"
+		default:
+			t.Fatalf("unexpected path %q", r.URL.EscapedPath())
+		}
+		if r.Method != wantMethod {
+			t.Errorf("method = %q, want %q", r.Method, wantMethod)
+		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Errorf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(body) != 0 {
+			t.Errorf("request body = %s, want empty", body)
+		}
+		w.WriteHeader(http.StatusNotImplemented)
+		_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"`+detail+`"}`)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name   string
+		detail string
+		call   func() error
+	}{
+		{name: "discover organisations", detail: "organisation discovery is not configured for this process", call: func() error {
+			_, err := client.DiscoverOrganisations(context.Background())
+			return err
+		}},
+		{name: "list repositories", detail: "repository listing is not configured for this process", call: func() error {
+			_, err := client.ListRepositories(context.Background())
+			return err
+		}},
+		{name: "sync repositories", detail: "repository sync is not configured for this process", call: func() error {
+			return client.SyncRepositories(context.Background())
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			err := test.call()
+			var apiError *APIError
+			if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != test.detail {
+				t.Fatalf("error = %#v, want feature_not_configured 501", err)
+			}
+			if !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("error = %v, want ErrUnavailable", err)
+			}
+		})
+	}
+}
+
 func callContractOperationParts(client any, operation Operation, path any, query url.Values, request any) (any, error) {
 	ctx := context.Background()
 	method := reflect.ValueOf(client).MethodByName(operation.Name)

@@ -5,12 +5,9 @@ exact: a client must reject any protocol other than `v1`. Every operation
 requires the daemon bearer token. The separate unauthenticated `/healthz`
 readiness endpoint is outside this client contract.
 
-The request column names the JSON DTO. For the pull-request and comment
-operations, path parameters are supplied separately by the client method so
-they cannot leak into strict JSON bodies. For other operations, path parameters
-are also present in the request DTO so an implementation can validate a request
-before constructing a route. An em dash means that the operation has no request
-body.
+The request column names the JSON DTO. Path parameters are supplied separately
+by the client method so they cannot leak into strict JSON bodies. An em dash
+means that the operation has no request body.
 
 | Operation | Method | Route | Request DTO | Response DTO |
 | --- | --- | --- | --- | --- |
@@ -42,10 +39,14 @@ body.
 | GetPullRequestDiff | GET | `/api/v1/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/diff` | — | `PullRequestDiffResponse` |
 | OpenPullRequests | POST | `/api/v1/projects/{projectID}/epics/{epicID}/open-pull-requests` | — | `OpenPullRequestsResponse` |
 | AddComment | POST | `/api/v1/projects/{projectID}/epics/{epicID}/comments` | `AddCommentRequest` | — (204) |
-| ListRepositories | GET | `/api/v1/repositories` | `ListRepositoriesRequest` | `ListRepositoriesResponse` |
-| GetRepository | GET | `/api/v1/repositories/{repository}` | `GetRepositoryRequest` | `GetRepositoryResponse` |
-| ListOrganisations | GET | `/api/v1/organisations` | `ListOrganisationsRequest` | `ListOrganisationsResponse` |
-| GetOrganisation | GET | `/api/v1/organisations/{organisation}` | `GetOrganisationRequest` | `GetOrganisationResponse` |
+| ListOrganisations | GET | `/api/v1/organisations` | — | `ListOrganisationsResponse` (200) |
+| AddOrganisation | POST | `/api/v1/organisations` | `AddOrganisationRequest` | — (204) |
+| RemoveOrganisation | DELETE | `/api/v1/organisations/{name}` | — | — (204) |
+| DiscoverOrganisations | POST | `/api/v1/organisations/discovery` | — | `DiscoverOrganisationsResponse` (200) |
+| ListRepositories | GET | `/api/v1/repositories` | — | `ListRepositoriesResponse` (200) |
+| SyncRepositories | POST | `/api/v1/repositories/sync` | — | — (204) |
+| ListProjectRepositories | GET | `/api/v1/projects/{projectID}/repositories` | — | `ListProjectRepositoriesResponse` (200) |
+| UpdateProjectRepositories | PUT | `/api/v1/projects/{projectID}/repositories` | `UpdateProjectRepositoriesRequest` | — (204) |
 | GetAgentSettings | GET | `/api/v1/projects/{project}/agent-settings` | `GetAgentSettingsRequest` | `GetAgentSettingsResponse` |
 | ListAgentRuns | GET | `/api/v1/projects/{project}/agent-runs` | `ListAgentRunsRequest` | `ListAgentRunsResponse` |
 | ListSandboxes | GET | `/api/v1/sandboxes` | `ListSandboxesRequest` | `ListSandboxesResponse` |
@@ -53,7 +54,7 @@ body.
 | AgentActivity | GET | `/api/v1/agent-runs/{run}/activity` | `AgentActivityRequest` | `AgentActivityResponse` |
 | RunOutput | GET | `/api/v1/agent-runs/{run}/output` | `RunOutputRequest` | `RunOutputResponse` |
 | Capabilities | GET | `/api/v1/capabilities` | — | `CapabilitiesResponse` |
-| AddRepository | POST | `/api/v1/repositories` | `AddRepositoryRequest` | `AddRepositoryResponse` |
+| AddRepository | POST | `/api/v1/repositories` | `AddRepositoryRequest` | `Repository` (201) |
 | GetAgentRun | GET | `/api/v1/agent-runs/{run}` | `GetAgentRunRequest` | `GetAgentRunResponse` |
 | Complete | POST | `/api/v1/complete` | `CompleteRequest` | `CompleteResponse` |
 | ReviewApprovedBranches | POST | `/api/v1/review-approved-branches` | `ReviewApprovedBranchesRequest` | `ReviewApprovedBranchesResponse` |

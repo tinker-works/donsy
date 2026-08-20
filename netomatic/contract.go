@@ -235,16 +235,15 @@ type Comment struct {
 }
 
 type Repository struct {
-	ID      string `json:"id,omitempty"`
-	Name    string `json:"name"`
-	Owner   string `json:"owner,omitempty"`
-	URL     string `json:"url,omitempty"`
-	Default string `json:"default_branch,omitempty"`
+	Name         string
+	FullName     string
+	HTTPURL      string
+	SSHURL       string
+	Organisation string
 }
 
 type Organisation struct {
-	ID   string `json:"id,omitempty"`
-	Name string `json:"name"`
+	Name string
 }
 
 type AgentSettings struct {
@@ -508,28 +507,26 @@ type AddCommentRequest struct {
 	Target   CommentTarget `json:"target"`
 	Body     string        `json:"body"`
 }
-type ListRepositoriesRequest struct {
-	Organisation string `json:"organisation,omitempty"`
+type ListOrganisationsResponse []Organisation
+type AddOrganisationRequest struct {
+	Name string `json:"name"`
 }
-type ListRepositoriesResponse struct {
-	Repositories []Repository `json:"repositories"`
+type RemoveOrganisationPath struct {
+	Name string
 }
-type GetRepositoryRequest struct {
-	Organisation string `json:"organisation"`
-	Repository   string `json:"repository"`
+type DiscoverOrganisationsResponse []Organisation
+type ListRepositoriesResponse []Repository
+type AddRepositoryRequest struct {
+	FullName string `json:"fullName"`
 }
-type GetRepositoryResponse struct {
-	Repository Repository `json:"repository"`
+type AddRepositoryResponse = Repository
+type ListProjectRepositoriesPath struct {
+	ProjectID uint
 }
-type ListOrganisationsRequest struct{}
-type ListOrganisationsResponse struct {
-	Organisations []Organisation `json:"organisations"`
-}
-type GetOrganisationRequest struct {
-	Organisation string `json:"organisation"`
-}
-type GetOrganisationResponse struct {
-	Organisation Organisation `json:"organisation"`
+type ListProjectRepositoriesResponse []string
+type UpdateProjectRepositoriesPath = ListProjectRepositoriesPath
+type UpdateProjectRepositoriesRequest struct {
+	Repositories []string `json:"repositories"`
 }
 type GetAgentSettingsRequest struct {
 	Project string `json:"project"`
@@ -661,15 +658,6 @@ func PageDaemonLog(content []byte, request ReadDaemonLogRequest) (ReadDaemonLogR
 	return ReadDaemonLogResponse{Lines: lines, NextOffset: cursor, OffsetReset: reset}, nil
 }
 
-type AddRepositoryRequest struct {
-	Project string `json:"project"`
-	Name    string `json:"name"`
-	URL     string `json:"url"`
-	Branch  string `json:"branch,omitempty"`
-}
-type AddRepositoryResponse struct {
-	Repository Repository `json:"repository"`
-}
 type GetAgentRunRequest struct {
 	Run string `json:"run"`
 }
@@ -749,10 +737,14 @@ type Client interface {
 	GetPullRequestDiff(context.Context, GetPullRequestDiffPath) (PullRequestDiffResponse, error)
 	OpenPullRequests(context.Context, OpenPullRequestsPath) (OpenPullRequestsResponse, error)
 	AddComment(context.Context, AddCommentPath, AddCommentRequest) error
-	ListRepositories(context.Context, ListRepositoriesRequest) (ListRepositoriesResponse, error)
-	GetRepository(context.Context, GetRepositoryRequest) (GetRepositoryResponse, error)
-	ListOrganisations(context.Context, ListOrganisationsRequest) (ListOrganisationsResponse, error)
-	GetOrganisation(context.Context, GetOrganisationRequest) (GetOrganisationResponse, error)
+	ListOrganisations(context.Context) (ListOrganisationsResponse, error)
+	AddOrganisation(context.Context, AddOrganisationRequest) error
+	RemoveOrganisation(context.Context, RemoveOrganisationPath) error
+	DiscoverOrganisations(context.Context) (DiscoverOrganisationsResponse, error)
+	ListRepositories(context.Context) (ListRepositoriesResponse, error)
+	SyncRepositories(context.Context) error
+	ListProjectRepositories(context.Context, ListProjectRepositoriesPath) (ListProjectRepositoriesResponse, error)
+	UpdateProjectRepositories(context.Context, UpdateProjectRepositoriesPath, UpdateProjectRepositoriesRequest) error
 	GetAgentSettings(context.Context, GetAgentSettingsRequest) (GetAgentSettingsResponse, error)
 	ListAgentRuns(context.Context, ListAgentRunsRequest) (ListAgentRunsResponse, error)
 	ListSandboxes(context.Context, ListSandboxesRequest) (ListSandboxesResponse, error)
@@ -792,9 +784,9 @@ const (
 	routeProcess = APIPrefix + "/process"
 )
 
-// Contract is the complete versioned route inventory. The first 38 rows are
-// the original TUI client operations; the remaining rows are daemon routes
-// needed by the host and the public log operation.
+// Contract is the complete versioned route inventory. The first
+// ClientOperationCount rows are client operations; the remaining rows are
+// daemon routes needed by the host and the public log operation.
 var Contract = []Operation{
 	{Name: "Process", Method: MethodGet, Route: routeProcess, Response: "ProcessResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListProjects", Method: MethodGet, Route: APIPrefix + "/projects", Response: "ListProjectsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -824,10 +816,14 @@ var Contract = []Operation{
 	{Name: "GetPullRequestDiff", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/diff", Path: "GetPullRequestDiffPath", Response: "PullRequestDiffResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "OpenPullRequests", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/open-pull-requests", Path: "OpenPullRequestsPath", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "AddComment", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/comments", Path: "AddCommentPath", Request: "AddCommentRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
-	{Name: "ListRepositories", Method: MethodGet, Route: APIPrefix + "/repositories", Request: "ListRepositoriesRequest", Response: "ListRepositoriesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GetRepository", Method: MethodGet, Route: APIPrefix + "/repositories/{repository}", Request: "GetRepositoryRequest", Response: "GetRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ListOrganisations", Method: MethodGet, Route: APIPrefix + "/organisations", Request: "ListOrganisationsRequest", Response: "ListOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "GetOrganisation", Method: MethodGet, Route: APIPrefix + "/organisations/{organisation}", Request: "GetOrganisationRequest", Response: "GetOrganisationResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListOrganisations", Method: MethodGet, Route: APIPrefix + "/organisations", Response: "ListOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "AddOrganisation", Method: MethodPost, Route: APIPrefix + "/organisations", Request: "AddOrganisationRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "RemoveOrganisation", Method: MethodDelete, Route: APIPrefix + "/organisations/{name}", Path: "RemoveOrganisationPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "DiscoverOrganisations", Method: MethodPost, Route: APIPrefix + "/organisations/discovery", Response: "DiscoverOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ListRepositories", Method: MethodGet, Route: APIPrefix + "/repositories", Response: "ListRepositoriesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "SyncRepositories", Method: MethodPost, Route: APIPrefix + "/repositories/sync", SuccessStatus: http.StatusNoContent, Authenticated: true},
+	{Name: "ListProjectRepositories", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/repositories", Path: "ListProjectRepositoriesPath", Response: "ListProjectRepositoriesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "UpdateProjectRepositories", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/repositories", Path: "UpdateProjectRepositoriesPath", Request: "UpdateProjectRepositoriesRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "GetAgentSettings", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-settings", Request: "GetAgentSettingsRequest", Response: "GetAgentSettingsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListAgentRuns", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-runs", Request: "ListAgentRunsRequest", Response: "ListAgentRunsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/sandboxes", Request: "ListSandboxesRequest", Response: "ListSandboxesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -835,7 +831,7 @@ var Contract = []Operation{
 	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/activity", Request: "AgentActivityRequest", Response: "AgentActivityResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/output", Request: "RunOutputRequest", Response: "RunOutputResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "AddRepositoryResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "Repository", SuccessStatus: http.StatusCreated, Authenticated: true},
 	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}", Request: "GetAgentRunRequest", Response: "GetAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
@@ -855,10 +851,10 @@ func ContractOperations() []Operation {
 // ClientOperationCount is the number of retained operations that originated
 // at the old TUI boundary. It intentionally excludes daemon-only routes and
 // ReadDaemonLog.
-const ClientOperationCount = 38
+const ClientOperationCount = 42
 
 // DaemonOperationCount includes every row in Contract.
-const DaemonOperationCount = 48
+const DaemonOperationCount = 52
 
 // ValidateContract catches accidental omissions when a route is added to the
 // table without a corresponding public DTO or method declaration.

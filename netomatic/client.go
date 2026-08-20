@@ -317,30 +317,47 @@ func (c *HTTPClient) AddComment(ctx context.Context, path AddCommentPath, reques
 	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) ListRepositories(ctx context.Context, request ListRepositoriesRequest) (ListRepositoriesResponse, error) {
-	var response ListRepositoriesResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/repositories", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) GetRepository(ctx context.Context, request GetRepositoryRequest) (GetRepositoryResponse, error) {
-	var response GetRepositoryResponse
-	route := APIPrefix + "/repositories/" + escapePathSegment(request.Repository)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) ListOrganisations(ctx context.Context, request ListOrganisationsRequest) (ListOrganisationsResponse, error) {
+func (c *HTTPClient) ListOrganisations(ctx context.Context) (ListOrganisationsResponse, error) {
 	var response ListOrganisationsResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/organisations", true, nil, request, &response, http.StatusOK)
+	err := c.do(ctx, MethodGet, APIPrefix+"/organisations", true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) GetOrganisation(ctx context.Context, request GetOrganisationRequest) (GetOrganisationResponse, error) {
-	var response GetOrganisationResponse
-	route := APIPrefix + "/organisations/" + escapePathSegment(request.Organisation)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) AddOrganisation(ctx context.Context, request AddOrganisationRequest) error {
+	return c.do(ctx, MethodPost, APIPrefix+"/organisations", true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) RemoveOrganisation(ctx context.Context, path RemoveOrganisationPath) error {
+	route := APIPrefix + "/organisations/" + escapePathSegment(path.Name)
+	return c.do(ctx, MethodDelete, route, true, nil, nil, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) DiscoverOrganisations(ctx context.Context) (DiscoverOrganisationsResponse, error) {
+	var response DiscoverOrganisationsResponse
+	err := c.do(ctx, MethodPost, APIPrefix+"/organisations/discovery", true, nil, nil, &response, http.StatusOK)
 	return response, err
+}
+
+func (c *HTTPClient) ListRepositories(ctx context.Context) (ListRepositoriesResponse, error) {
+	var response ListRepositoriesResponse
+	err := c.do(ctx, MethodGet, APIPrefix+"/repositories", true, nil, nil, &response, http.StatusOK)
+	return response, err
+}
+
+func (c *HTTPClient) SyncRepositories(ctx context.Context) error {
+	return c.do(ctx, MethodPost, APIPrefix+"/repositories/sync", true, nil, nil, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) ListProjectRepositories(ctx context.Context, path ListProjectRepositoriesPath) (ListProjectRepositoriesResponse, error) {
+	var response ListProjectRepositoriesResponse
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/repositories"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
+	return response, err
+}
+
+func (c *HTTPClient) UpdateProjectRepositories(ctx context.Context, path UpdateProjectRepositoriesPath, request UpdateProjectRepositoriesRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/repositories"
+	return c.do(ctx, MethodPut, route, true, nil, request, nil, http.StatusNoContent)
 }
 
 func (c *HTTPClient) GetAgentSettings(ctx context.Context, request GetAgentSettingsRequest) (GetAgentSettingsResponse, error) {
@@ -392,7 +409,7 @@ func (c *HTTPClient) Capabilities(ctx context.Context) (CapabilitiesResponse, er
 
 func (c *HTTPClient) AddRepository(ctx context.Context, request AddRepositoryRequest) (AddRepositoryResponse, error) {
 	var response AddRepositoryResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/repositories", true, nil, request, &response, http.StatusOK)
+	err := c.do(ctx, MethodPost, APIPrefix+"/repositories", true, nil, request, &response, http.StatusCreated)
 	return response, err
 }
 

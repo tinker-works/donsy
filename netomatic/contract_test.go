@@ -129,10 +129,12 @@ func contractListFixture(value any, field, object string) contractFixture {
 }
 
 const (
-	commentFixtureJSON     = `{"ID":"comment-1","Author":"reviewer","CreatedAt":"2026-08-19T12:01:00Z","Body":"Please review"}`
-	issueFixtureJSON       = `{"ID":"issue-1","Title":"First issue","ParentID":"parent-1","Repository":"origin","State":"Coding","CreatedAt":"2026-08-19T12:00:00Z","Body":"Implement it","Comments":[` + commentFixtureJSON + `],"BlockedBy":["issue-0"]}`
-	pullRequestFixtureJSON = `{"ID":"pr-1","IssueID":"issue-1","Title":"Implement issue","Status":"open","Repository":"origin","Number":7,"URL":"https://example.test/pr/7","Head":"feature/issue-1","Base":"main","Flags":["stale","human-needed"],"ReviewedHead":"abc123","ReviewedBase":"def456","Rounds":2,"Reviews":1,"RoundsGranted":1,"CodingRounds":2,"Approved":true,"CreatedAt":"2026-08-19T12:02:00Z","Comments":[` + commentFixtureJSON + `]}`
-	epicFixtureJSON        = `{"ID":"epic-1","Title":"First epic","Assignee":"alice","Repositories":["origin","secondary"],"Body":"Plan the release","State":"Review","BranchPrefix":"jira-123","Issues":[` + issueFixtureJSON + `],"PullRequests":[` + pullRequestFixtureJSON + `],"DraftingPasses":2}`
+	commentFixtureJSON      = `{"ID":"comment-1","Author":"reviewer","CreatedAt":"2026-08-19T12:01:00Z","Body":"Please review"}`
+	issueFixtureJSON        = `{"ID":"issue-1","Title":"First issue","ParentID":"parent-1","Repository":"origin","State":"Coding","CreatedAt":"2026-08-19T12:00:00Z","Body":"Implement it","Comments":[` + commentFixtureJSON + `],"BlockedBy":["issue-0"]}`
+	pullRequestFixtureJSON  = `{"ID":"pr-1","IssueID":"issue-1","Title":"Implement issue","Status":"open","Repository":"origin","Number":7,"URL":"https://example.test/pr/7","Head":"feature/issue-1","Base":"main","Flags":["stale","human-needed"],"ReviewedHead":"abc123","ReviewedBase":"def456","Rounds":2,"Reviews":1,"RoundsGranted":1,"CodingRounds":2,"Approved":true,"CreatedAt":"2026-08-19T12:02:00Z","Comments":[` + commentFixtureJSON + `]}`
+	epicFixtureJSON         = `{"ID":"epic-1","Title":"First epic","Assignee":"alice","Repositories":["origin","secondary"],"Body":"Plan the release","State":"Review","BranchPrefix":"jira-123","Issues":[` + issueFixtureJSON + `],"PullRequests":[` + pullRequestFixtureJSON + `],"DraftingPasses":2}`
+	organisationFixtureJSON = `{"Name":"acme"}`
+	repositoryFixtureJSON   = `{"Name":"donsy","FullName":"acme/donsy","HTTPURL":"https://example.test/donsy","SSHURL":"git@example.test:acme/donsy.git","Organisation":"acme"}`
 )
 
 var (
@@ -223,23 +225,30 @@ var contractDTOs = map[string]any{
 	"PullRequestDiffResponse":      contractFixture{value: PullRequestDiffResponse{Diff: "@@ -1 +1 @@\n-old\n+new\n"}, json: `{"diff":"@@ -1 +1 @@\n-old\n+new\n"}`},
 	"OpenPullRequestsResponse":     contractFixture{value: OpenPullRequestsResponse{Opened: 2}, json: `{"opened":2}`},
 	"AddCommentRequest":            AddCommentRequest{TargetID: "issue-1", Target: IssueCommentTarget, Body: "Please review"},
-	"ListRepositoriesRequest":      ListRepositoriesRequest{Organisation: "acme"},
-	"ListRepositoriesResponse": ListRepositoriesResponse{Repositories: []Repository{{
-		ID: "repo-1", Name: "donsy", Owner: "acme", URL: "https://example.test/donsy", Default: "main",
-	}}},
-	"GetRepositoryRequest": GetRepositoryRequest{Organisation: "acme", Repository: "donsy"},
-	"GetRepositoryResponse": GetRepositoryResponse{Repository: Repository{
-		ID: "repo-1", Name: "donsy", Owner: "acme", URL: "https://example.test/donsy", Default: "main",
-	}},
-	"ListOrganisationsRequest": ListOrganisationsRequest{},
-	"ListOrganisationsResponse": ListOrganisationsResponse{Organisations: []Organisation{{
-		ID: "org-1", Name: "acme",
-	}}},
-	"GetOrganisationRequest": GetOrganisationRequest{Organisation: "acme"},
-	"GetOrganisationResponse": GetOrganisationResponse{Organisation: Organisation{
-		ID: "org-1", Name: "acme",
-	}},
-	"GetAgentSettingsRequest": GetAgentSettingsRequest{Project: "demo"},
+	"ListOrganisationsResponse": contractFixture{
+		value: ListOrganisationsResponse{{Name: "acme"}},
+		json:  `[` + organisationFixtureJSON + `]`,
+	},
+	"AddOrganisationRequest": AddOrganisationRequest{Name: "acme"},
+	"DiscoverOrganisationsResponse": contractFixture{
+		value: DiscoverOrganisationsResponse{{Name: "acme"}},
+		json:  `[` + organisationFixtureJSON + `]`,
+	},
+	"ListRepositoriesResponse": contractFixture{
+		value: ListRepositoriesResponse{{Name: "donsy", FullName: "acme/donsy", HTTPURL: "https://example.test/donsy", SSHURL: "git@example.test:acme/donsy.git", Organisation: "acme"}},
+		json:  `[` + repositoryFixtureJSON + `]`,
+	},
+	"AddRepositoryRequest": AddRepositoryRequest{FullName: "acme/donsy"},
+	"Repository": contractFixture{
+		value: Repository{Name: "donsy", FullName: "acme/donsy", HTTPURL: "https://example.test/donsy", SSHURL: "git@example.test:acme/donsy.git", Organisation: "acme"},
+		json:  repositoryFixtureJSON,
+	},
+	"ListProjectRepositoriesResponse": contractFixture{
+		value: ListProjectRepositoriesResponse{"acme/donsy", "acme/other"},
+		json:  `["acme/donsy","acme/other"]`,
+	},
+	"UpdateProjectRepositoriesRequest": UpdateProjectRepositoriesRequest{Repositories: []string{"acme/donsy", "acme/other"}},
+	"GetAgentSettingsRequest":          GetAgentSettingsRequest{Project: "demo"},
 	"GetAgentSettingsResponse": GetAgentSettingsResponse{Settings: []AgentSettings{{
 		Agent: "coder", Variant: "fast", Values: map[string]string{"model": "small", "temperature": "0.2"},
 	}}},
@@ -277,12 +286,6 @@ var contractDTOs = map[string]any{
 		},
 		json: `{"cancelAgentRun":true,"discoverOrganisations":true,"listRepositories":true,"readRunOutput":true,"reconcileSandboxes":true,"resetIssue":true,"runEpicAgent":true,"runIssueAgent":true,"syncRepositories":true}`,
 	},
-	"AddRepositoryRequest": AddRepositoryRequest{
-		Project: "demo", Name: "donsy", URL: "https://example.test/donsy", Branch: "main",
-	},
-	"AddRepositoryResponse": AddRepositoryResponse{Repository: Repository{
-		ID: "repo-1", Name: "donsy", Owner: "acme", URL: "https://example.test/donsy", Default: "main",
-	}},
 	"GetAgentRunRequest": GetAgentRunRequest{Run: "run-1"},
 	"GetAgentRunResponse": GetAgentRunResponse{Run: AgentRun{
 		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "complete", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
@@ -311,15 +314,18 @@ var contractDTOs = map[string]any{
 }
 
 var contractPathDTOs = map[string]any{
-	"ShapePath":                 contractPathFixture{Project: "demo/blue"},
-	"CreatePullRequestPath":     CreatePullRequestPath{ProjectID: 7, EpicID: "epic-1"},
-	"TransitionPullRequestPath": TransitionPullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
-	"GrantCodingRoundPath":      GrantCodingRoundPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
-	"MergePullRequestPath":      MergePullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
-	"ResetIssuePath":            ResetIssuePath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
-	"GetPullRequestDiffPath":    GetPullRequestDiffPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
-	"OpenPullRequestsPath":      OpenPullRequestsPath{ProjectID: 7, EpicID: "epic-1"},
-	"AddCommentPath":            AddCommentPath{ProjectID: 7, EpicID: "epic-1"},
+	"ShapePath":                     contractPathFixture{Project: "demo/blue"},
+	"CreatePullRequestPath":         CreatePullRequestPath{ProjectID: 7, EpicID: "epic-1"},
+	"TransitionPullRequestPath":     TransitionPullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"GrantCodingRoundPath":          GrantCodingRoundPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"MergePullRequestPath":          MergePullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"ResetIssuePath":                ResetIssuePath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"GetPullRequestDiffPath":        GetPullRequestDiffPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
+	"OpenPullRequestsPath":          OpenPullRequestsPath{ProjectID: 7, EpicID: "epic-1"},
+	"AddCommentPath":                AddCommentPath{ProjectID: 7, EpicID: "epic-1"},
+	"RemoveOrganisationPath":        RemoveOrganisationPath{Name: "acme/team"},
+	"ListProjectRepositoriesPath":   ListProjectRepositoriesPath{ProjectID: 7},
+	"UpdateProjectRepositoriesPath": UpdateProjectRepositoriesPath{ProjectID: 7},
 }
 
 var contractQueryDTOs = map[string]url.Values{
