@@ -161,35 +161,23 @@ var contractDTOs = map[string]any{
 		value: ProcessResponse{CurrentUser: "octocat", Protocol: ProtocolVersion},
 		json:  `{"currentUser":"octocat","protocol":"v1"}`,
 	},
-	"ListProjectsResponse": ListProjectsResponse{
-		Projects: []Project{{Name: "demo", Description: "Example project", Open: true}},
+	"ListProjectsResponse": contractFixture{
+		value: ListProjectsResponse{{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}},
+		json:  `[{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"}]`,
 	},
-	"CreateProjectRequest": CreateProjectRequest{
-		Name: "demo", Description: "Example project",
+	"CreateProjectRequest":  CreateProjectRequest{Name: "demo"},
+	"CreateProjectResponse": contractFixture{value: CreateProjectResponse{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}, json: `{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"}`},
+	"ListProjectSummariesResponse": contractFixture{
+		value: ListProjectSummariesResponse{{Project: Project{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}, Epics: 2, Running: 1}},
+		json:  `[{"project":{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"},"epics":2,"running":1}]`,
 	},
-	"CreateProjectResponse": CreateProjectResponse{
-		Project: Project{Name: "demo", Description: "Example project", Open: true},
+	"SetupState": contractFixture{
+		value: SetupState{Organisations: 1, Repositories: 2, RolesSet: 3, RolesTotal: 3},
+		json:  `{"Organisations":1,"Repositories":2,"RolesSet":3,"RolesTotal":3}`,
 	},
-	"OpenProjectRequest": OpenProjectRequest{Project: "demo"},
-	"OpenProjectResponse": OpenProjectResponse{
-		Project: Project{Name: "demo", Description: "Example project", Open: true},
+	"InitialiseStoreRequest": InitialiseStoreRequest{
+		Model: "small", Variant: "fast", Repositories: []string{"acme/donsy", "acme/other"},
 	},
-	"ForgetProjectRequest":    ForgetProjectRequest{Project: "demo"},
-	"ForgetProjectResponse":   ForgetProjectResponse{Forgotten: true},
-	"ProjectSummariesRequest": ProjectSummariesRequest{Project: "demo"},
-	"ProjectSummariesResponse": ProjectSummariesResponse{
-		Summaries: []ProjectSummary{{Project: "demo", EpicCount: 2, IssueCount: 5, PullRequestCount: 3}},
-	},
-	"GetSetupRequest": GetSetupRequest{Project: "demo"},
-	"GetSetupResponse": GetSetupResponse{Setup: Setup{
-		Project: "demo", Repository: "origin", Organisation: "acme", Agent: "coder", Variants: []string{"fast", "safe"}, Complete: true,
-	}},
-	"SaveSetupRequest": SaveSetupRequest{Project: "demo", Setup: Setup{
-		Project: "demo", Repository: "origin", Organisation: "acme", Agent: "coder", Variants: []string{"fast", "safe"}, Complete: true,
-	}},
-	"SaveSetupResponse": SaveSetupResponse{Setup: Setup{
-		Project: "demo", Repository: "origin", Organisation: "acme", Agent: "coder", Variants: []string{"fast", "safe"}, Complete: true,
-	}},
 	"ListEpicsRequest":        ListEpicsRequest{Project: "demo"},
 	"ListEpicsResponse":       contractListFixture(ListEpicsResponse{Epics: []Epic{contractEpic}}, "epics", epicFixtureJSON),
 	"GetEpicRequest":          GetEpicRequest{Project: "demo", Epic: "epic-1"},
@@ -312,6 +300,7 @@ var contractDTOs = map[string]any{
 
 var contractPathDTOs = map[string]any{
 	"ShapePath":                 contractPathFixture{Project: "demo/blue"},
+	"ProjectPath":               ProjectPath{ProjectID: 7},
 	"CreatePullRequestPath":     CreatePullRequestPath{ProjectID: 7, EpicID: "epic-1"},
 	"TransitionPullRequestPath": TransitionPullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
 	"GrantCodingRoundPath":      GrantCodingRoundPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
@@ -337,12 +326,12 @@ func TestRepresentativeDTOJSON(t *testing.T) {
 		t.Fatalf("ReadDaemonLogResponse JSON = %s, want %s", encoded, want)
 	}
 
-	request := CreateProjectRequest{Name: "demo", Description: "a project"}
+	request := CreateProjectRequest{Name: "demo"}
 	encoded, err = json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
-	const wantRequest = `{"name":"demo","description":"a project"}`
+	const wantRequest = `{"name":"demo"}`
 	if string(encoded) != wantRequest {
 		t.Fatalf("CreateProjectRequest JSON = %s, want %s", encoded, wantRequest)
 	}

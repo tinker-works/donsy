@@ -5,23 +5,20 @@ exact: a client must reject any protocol other than `v1`. Every operation
 requires the daemon bearer token. The separate unauthenticated `/healthz`
 readiness endpoint is outside this client contract.
 
-The request column names the JSON DTO. For the pull-request and comment
-operations, path parameters are supplied separately by the client method so
-they cannot leak into strict JSON bodies. For other operations, path parameters
-are also present in the request DTO so an implementation can validate a request
-before constructing a route. An em dash means that the operation has no request
-body.
+The request column names the JSON body DTO. Path parameters are supplied
+separately by the client method so they cannot leak into strict JSON bodies.
+An em dash means that the operation has no request body.
 
 | Operation | Method | Route | Request DTO | Response DTO |
 | --- | --- | --- | --- | --- |
 | Process | GET | `/api/v1/process` | — | `ProcessResponse` |
 | ListProjects | GET | `/api/v1/projects` | — | `ListProjectsResponse` |
-| CreateProject | POST | `/api/v1/projects` | `CreateProjectRequest` | `CreateProjectResponse` |
-| OpenProject | POST | `/api/v1/projects/{project}/open` | `OpenProjectRequest` | `OpenProjectResponse` |
-| ForgetProject | DELETE | `/api/v1/projects/{project}` | `ForgetProjectRequest` | `ForgetProjectResponse` |
-| ProjectSummaries | GET | `/api/v1/projects/{project}/summaries` | `ProjectSummariesRequest` | `ProjectSummariesResponse` |
-| GetSetup | GET | `/api/v1/projects/{project}/setup` | `GetSetupRequest` | `GetSetupResponse` |
-| SaveSetup | PUT | `/api/v1/projects/{project}/setup` | `SaveSetupRequest` | `SaveSetupResponse` |
+| CreateProject | POST | `/api/v1/projects` | `CreateProjectRequest` | `CreateProjectResponse` (201) |
+| OpenProject | POST | `/api/v1/projects/{projectID}/open` | — | — (204) |
+| ForgetProject | DELETE | `/api/v1/projects/{projectID}` | — | — (204) |
+| ListProjectSummaries | GET | `/api/v1/projects/summaries` | — | `ListProjectSummariesResponse` |
+| StoreSetup | GET | `/api/v1/projects/{projectID}/setup` | — | `SetupState` |
+| InitialiseStore | POST | `/api/v1/projects/{projectID}/setup` | `InitialiseStoreRequest` | — (204) |
 | ListEpics | GET | `/api/v1/projects/{project}/epics` | `ListEpicsRequest` | `ListEpicsResponse` |
 | GetEpic | GET | `/api/v1/projects/{project}/epics/{epic}` | `GetEpicRequest` | `GetEpicResponse` |
 | CreateEpic | POST | `/api/v1/projects/{project}/epics` | `CreateEpicRequest` | `CreateEpicResponse` |

@@ -121,6 +121,46 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 	}
 }
 
+func TestHTTPClientProjectSummariesDecodesWorkspaceError(t *testing.T) {
+	const responseBody = `[{"project":{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"},"epics":0,"running":0,"error":{"code":"workspace_unavailable","detail":"the project workspace could not be read"}}]`
+	var requestCount int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.EscapedPath() != APIPrefix+"/projects/summaries" {
+			t.Fatalf("request = %s %s, want GET %s", r.Method, r.URL.EscapedPath(), APIPrefix+"/projects/summaries")
+		}
+		if r.Header.Get("Authorization") != "Bearer token" {
+			t.Fatalf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
+		}
+		body, err := io.ReadAll(r.Body)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(body) != 0 {
+			t.Fatalf("request body = %s, want empty", body)
+		}
+		requestCount++
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.WriteString(w, responseBody)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	summaries, err := client.ListProjectSummaries(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if requestCount != 1 || len(summaries) != 1 {
+		t.Fatalf("request count = %d, summaries = %#v", requestCount, summaries)
+	}
+	if summaries[0].Error == nil || summaries[0].Error.Code != ErrorCode("workspace_unavailable") || summaries[0].Error.Detail != "the project workspace could not be read" {
+		t.Fatalf("summary error = %#v", summaries[0].Error)
+	}
+}
+
 func TestHTTPClientPullRequestOutcomesAndCommentTargets(t *testing.T) {
 	var mergeCalls int
 	var commentBodies []string
