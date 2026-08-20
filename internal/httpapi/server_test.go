@@ -229,7 +229,7 @@ func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
 			agent.AgentRoleRefiner: {Agent: "refiner", Variant: "low", MaxRounds: 1},
 		}},
 	}
-	output := &httpTestRunOutput{pages: map[int64][]string{8: {"next"}}, next: map[int64]int64{8: 24}, sizes: map[string]int64{"run-1": 42}}
+	output := &httpTestRunOutput{pages: map[int64][]string{8: {"next"}}, next: map[int64]int64{8: 13}, sizes: map[string]int64{"run-1": 42}}
 	registry := &httpTestRegistry{
 		projects:  []domain.Project{{ID: 1, Name: "demo"}},
 		sandboxes: []agent.Sandbox{{ID: "sandbox-1", Name: "demo-coder", Status: agent.SandboxStatusRunning}},
@@ -260,12 +260,15 @@ func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
 		t.Fatalf("settings = %#v, error = %v", settings, err)
 	}
 	activity, err := client.AgentActivity(context.Background(), netomatic.AgentActivityRequest{Run: "run-1"})
-	if err != nil || len(activity.Activity) != 42 || activity.Activity[0].Size != 42 {
+	if err != nil || len(activity.Activity) != 1 || activity.Activity[0].Size != 42 {
 		t.Fatalf("activity = %#v, error = %v", activity, err)
 	}
 	page, err := client.RunOutput(context.Background(), netomatic.RunOutputRequest{Run: "run-1", Offset: 8})
-	if err != nil || page.Output.Output != "next" || page.Output.Next != 24 || !reflect.DeepEqual(output.asked, []int64{8}) {
+	if err != nil || page.Output.Output != "next\n" || page.Output.Next != 13 || !reflect.DeepEqual(output.asked, []int64{8}) {
 		t.Fatalf("page = %#v, output offsets = %v, error = %v", page, output.asked, err)
+	}
+	if next := int64(8 + len(page.Output.Output)); next != page.Output.Next {
+		t.Fatalf("length-derived next offset = %d, want %d", next, page.Output.Next)
 	}
 	completed, err := client.Complete(context.Background(), netomatic.CompleteRequest{Project: "demo", Run: "run-1"})
 	if err != nil || completed.Complete || workspace.readEpicCalls == 0 {
@@ -274,6 +277,51 @@ func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
 	review, err := client.ReviewApprovedBranches(context.Background(), netomatic.ReviewApprovedBranchesRequest{Project: "demo"})
 	if err != nil || !reflect.DeepEqual(review.Branches, []string{"feature/one"}) {
 		t.Fatalf("review = %#v, error = %v", review, err)
+	}
+}
+
+func TestHandlerBoundsActivityResponse(t *testing.T) {
+	output := &httpTestRunOutput{sizes: map[string]int64{"run-1": 16 << 20}}
+	registry := &httpTestRegistry{}
+	useCases := usecases.NewUseCases(registry, httpTestFactory{workspace: &httpTestWorkspace{}}, httpTestClock{}, nil, &usecases.EpicAgentDependencies{
+		Output: output, Builder: httpTestCommandBuilder{},
+	})
+	server, err := New(useCases, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+	client, err := netomatic.NewHTTPClient(testServer.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	activity, err := client.AgentActivity(context.Background(), netomatic.AgentActivityRequest{Run: "run-1"})
+	if err != nil || len(activity.Activity) != 1 || activity.Activity[0].Size != 16<<20 {
+		t.Fatalf("activity = %#v, error = %v", activity, err)
+	}
+}
+
+func TestHandlerRejectsMalformedRepositoryNames(t *testing.T) {
+	useCases := usecases.NewUseCases(&httpTestRegistry{}, httpTestFactory{workspace: &httpTestWorkspace{}}, httpTestClock{}, nil, nil)
+	server, err := New(useCases, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, netomatic.APIPrefix+"/repositories", strings.NewReader(`{"fullName":"widgets"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	var response netomatic.APIError
+	if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+		t.Fatal(err)
+	}
+	if recorder.Code != http.StatusBadRequest || response.Code != netomatic.ErrorInvalidRequest {
+		t.Fatalf("response = %d %#v", recorder.Code, response)
 	}
 }
 

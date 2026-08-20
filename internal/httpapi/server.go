@@ -235,10 +235,6 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		s.writeError(w, http.StatusNotFound, netomatic.ErrorNotFound, err.Error())
 		return
 	}
-	if isRequestValidationError(err) {
-		s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, err.Error())
-		return
-	}
 	s.logger.Error("HTTP API request failed", "error", err)
 	s.writeError(w, http.StatusInternalServerError, netomatic.ErrorInternal, "the daemon could not process the request")
 }
@@ -257,16 +253,6 @@ type resourceNotFound string
 
 func (e resourceNotFound) Error() string { return string(e) + " was not found" }
 func errNotFound(resource string) error  { return resourceNotFound(resource) }
-
-func isRequestValidationError(err error) bool {
-	detail := err.Error()
-	return strings.Contains(detail, " is required") ||
-		strings.Contains(detail, " cannot be empty") ||
-		strings.Contains(detail, "must contain only") ||
-		strings.Contains(detail, "is not a valid slug") ||
-		strings.Contains(detail, "has invalid state") ||
-		strings.Contains(detail, "has invalid status")
-}
 
 func (s *Server) unavailable(feature string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {

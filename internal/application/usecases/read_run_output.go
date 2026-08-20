@@ -20,7 +20,11 @@ type ReadRunOutputQuery struct {
 // From next time; when it equals the request's From, nothing new was written.
 type RunOutputPage struct {
 	Entries []agent.TranscriptEntry
-	Next    int64
+	// Output is the complete transcript text consumed by this page. For normal
+	// append-only reads it is byte-for-byte aligned with Next so callers that
+	// persist offsets from the returned text can resume safely.
+	Output string
+	Next   int64
 }
 
 // ReadRunOutputUseCase reads what an agent said during a round. The transcript
@@ -46,8 +50,13 @@ func (u *ReadRunOutputUseCase) Handle(query ReadRunOutputQuery) (RunOutputPage, 
 	if err != nil {
 		return RunOutputPage{}, err
 	}
+	output := strings.Join(lines, "\n")
+	if len(lines) > 0 {
+		output += "\n"
+	}
 	return RunOutputPage{
-		Entries: u.builder.ParseTranscript(strings.Join(lines, "\n")),
+		Entries: u.builder.ParseTranscript(output),
+		Output:  output,
 		Next:    next,
 	}, nil
 }

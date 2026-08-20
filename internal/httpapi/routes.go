@@ -11,6 +11,7 @@ import (
 
 	"github.com/tinker-works/donsy/internal/application/agent_runtime"
 	"github.com/tinker-works/donsy/internal/application/usecases"
+	"github.com/tinker-works/donsy/internal/domain"
 	"github.com/tinker-works/donsy/internal/domain/agent"
 	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
 	"github.com/tinker-works/donsy/netomatic"
@@ -630,6 +631,11 @@ func (s *Server) syncRepositories(w http.ResponseWriter, r *http.Request) {
 func (s *Server) addRepository(w http.ResponseWriter, r *http.Request) {
 	var request netomatic.AddRepositoryRequest
 	err := s.decode(r, &request)
+	if err == nil {
+		if _, _, ok := domain.SplitRepositoryRef(request.FullName); !ok {
+			err = errInvalidRequest("repository must use owner/name form")
+		}
+	}
 	if err == nil && s.useCases.AddRepository == nil {
 		err = errUnavailable("adding repositories")
 	}
@@ -789,12 +795,9 @@ func (s *Server) agentActivity(w http.ResponseWriter, r *http.Request) {
 	size, ok := s.useCases.ReadRunOutput.Sizes([]string{runID})[runID]
 	response := netomatic.AgentActivityResponse{}
 	if ok && size > 0 {
-		// Goggles records the sample as len(Activity), so retain one element per
-		// transcript byte while placing the descriptive value on the first item.
-		response.Activity = make([]netomatic.AgentActivity, size)
-		response.Activity[0] = netomatic.AgentActivity{
+		response.Activity = []netomatic.AgentActivity{{
 			RunID: runID, Status: "available", Size: size,
-		}
+		}}
 	}
 	s.writeJSON(w, http.StatusOK, response)
 }
@@ -814,11 +817,7 @@ func (s *Server) runOutput(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	text := make([]string, 0, len(page.Entries))
-	for _, entry := range page.Entries {
-		text = append(text, entry.Text)
-	}
-	s.writeJSON(w, http.StatusOK, netomatic.RunOutputResponse{Output: netomatic.RunOutput{RunID: r.PathValue("run"), Output: strings.Join(text, "\n"), Next: page.Next, Done: page.Next == offset}})
+	s.writeJSON(w, http.StatusOK, netomatic.RunOutputResponse{Output: netomatic.RunOutput{RunID: r.PathValue("run"), Output: page.Output, Next: page.Next, Done: page.Next == offset}})
 }
 
 func (s *Server) completeEpic(w http.ResponseWriter, r *http.Request) {
