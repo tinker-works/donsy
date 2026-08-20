@@ -88,6 +88,9 @@ func (w AgentWorkspace) ensureLocked(
 	} else if err != nil {
 		return "", err
 	} else {
+		if err := validateCheckout(path); err != nil {
+			return "", err
+		}
 		repositoryHandle, err := git.PlainOpen(path)
 		if err != nil {
 			return "", err
@@ -196,6 +199,9 @@ func (w AgentWorkspace) Diff(
 }
 
 func diffBranches(path, base, head string) (string, error) {
+	if err := validateCheckout(path); err != nil {
+		return "", err
+	}
 	repositoryHandle, err := git.PlainOpen(path)
 	if err != nil {
 		return "", err

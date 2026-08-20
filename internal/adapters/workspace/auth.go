@@ -25,6 +25,30 @@ func trustedRemote(repository *git.Repository, remoteURL string) *git.Remote {
 	})
 }
 
+// validateCheckout keeps go-git from following Git metadata an agent replaced
+// after the checkout was mounted. A normal clone has a .git directory; a
+// symlink or gitdir file can redirect host operations into another repository.
+func validateCheckout(path string) error {
+	checkout, err := os.Lstat(path)
+	if err != nil {
+		return err
+	}
+	if checkout.Mode()&os.ModeSymlink != 0 || !checkout.IsDir() {
+		return fmt.Errorf("checkout %q is not a directory", path)
+	}
+	metadata, err := os.Lstat(filepath.Join(path, ".git"))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("inspect Git metadata for checkout %q: %w", path, err)
+	}
+	if metadata.Mode()&os.ModeSymlink != 0 || !metadata.IsDir() {
+		return fmt.Errorf("checkout %q has unsafe .git metadata", path)
+	}
+	return nil
+}
+
 func authForURL(remote string) (transport.AuthMethod, error) {
 	if strings.HasPrefix(remote, "git@") || strings.HasPrefix(remote, "ssh://") {
 		host := sshHost(remote)

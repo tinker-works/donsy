@@ -109,6 +109,22 @@ func TestCreateArgs_ShouldLimitMemoryWithoutLimitingCPU(t *testing.T) {
 	}
 }
 
+func TestCreateArgs_ShouldAllowRootlessDockerToCreateUserNamespaces(t *testing.T) {
+	// Arrange
+	spec := testSpec(t)
+	spec.InstallDocker = true
+
+	// Act
+	args := createArgs(spec, "image")
+
+	// Assert: the nested daemon is rootless, but RootlessKit still needs its
+	// user-namespace unshare allowed by the outer Docker seccomp profile.
+	joined := strings.Join(args, " ")
+	if !strings.Contains(joined, "--security-opt seccomp=unconfined") {
+		t.Fatalf("expected the nested Docker security option, got %v", args)
+	}
+}
+
 // Everything the user types `docker` for goes to whatever context is active,
 // and colima's default is to make its own the active one. A regression here
 // silently points the user's docker at an agent's machine, which is the most

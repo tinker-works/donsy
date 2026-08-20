@@ -188,6 +188,18 @@ func mutateOrigin(t *testing.T, path, remote string) {
 	}
 }
 
+func replaceGitMetadata(t *testing.T, path, target string) {
+	t.Helper()
+	metadata := filepath.Join(path, ".git")
+	if err := os.RemoveAll(metadata); err != nil {
+		t.Fatal(err)
+	}
+	contents := "gitdir: " + filepath.Join(target, ".git") + "\n"
+	if err := os.WriteFile(metadata, []byte(contents), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCodeWorkspace_DefaultBranch_ShouldReadTheRemoteHead(t *testing.T) {
 	// Arrange
 	workspace, _, _ := localCodeWorkspace(t)
@@ -277,6 +289,29 @@ func TestCodeWorkspace_Push_ShouldIgnoreAMutatedCheckoutOrigin(t *testing.T) {
 	}
 	if _, err := remoteBranchHash(t, evil, "go-merge/issue-1"); !errors.Is(err, plumbing.ErrReferenceNotFound) {
 		t.Fatalf("expected the mutated repository to remain untouched, got %v", err)
+	}
+}
+
+func TestCodeWorkspace_Checkout_ShouldRejectGitMetadataRedirectedByTheSandbox(t *testing.T) {
+	// Arrange: a writable sandbox can replace .git with a gitdir file, but the
+	// host must not follow it into another checkout on a retry.
+	workspace, _, checkout := localCodeWorkspace(t)
+	path, err := workspace.Checkout(context.Background(), checkout, "go-merge/issue-1", "master")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	if _, err := git.PlainInit(filepath.Join(other, ".git"), true); err != nil {
+		t.Fatal(err)
+	}
+	replaceGitMetadata(t, path, other)
+
+	// Act
+	_, err = workspace.Checkout(context.Background(), checkout, "go-merge/issue-1", "master")
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), "unsafe .git metadata") {
+		t.Fatalf("expected redirected Git metadata to be rejected, got %v", err)
 	}
 }
 

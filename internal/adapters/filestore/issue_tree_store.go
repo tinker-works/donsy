@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/tinker-works/donsy/internal/application/agent_runtime"
+	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
 )
 
 // IssueTreeStore persists the editable issue tree mounted into an agent sandbox. It does no
@@ -29,6 +30,15 @@ func (s IssueTreeStore) treePath(sandboxName, epicID string) (string, error) {
 		return "", err
 	}
 	return filepath.Join(s.Root, epicID, "trees", sandboxName), nil
+}
+
+func validateIssueIDs(issues []epicpkg.Issue) error {
+	for _, issue := range issues {
+		if err := validatePathComponent("issue ID", issue.ID); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func validatePathComponent(label, value string) error {

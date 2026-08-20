@@ -100,6 +100,11 @@ func TestClient_EndToEnd_ShouldRunTheLifecycleOnRealColima(t *testing.T) {
 		strings.TrimSpace(output) != guestUser {
 		t.Fatalf("expected the round to run as %q, got %q (%v)", guestUser, output, err)
 	}
+	if output, err := client.Run(ctx, ref, "e2e-docker-info",
+		[]string{"docker", "info", "--format", "{{.ServerVersion}}"}); err != nil ||
+		strings.TrimSpace(output) == "" {
+		t.Fatalf("expected the rootless Docker daemon to answer, got %q (%v)", output, err)
+	}
 	// The nested Docker daemon resolves the bind source in the VM, not in the
 	// agent container. The host-identity mount and exported path make the source
 	// usable without confusing /work/repo with the daemon's filesystem.

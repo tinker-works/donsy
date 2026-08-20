@@ -31,8 +31,9 @@ const containerMemoryLimit = "2g"
 // It covers "storage" and not its parent: auth.json is that directory's sibling
 // and must not outlive the round on a volume nobody is watching.
 const (
-	sessionVolumePrefix = "gm-session-"
-	sessionPath         = guestHome + "/.local/share/opencode/storage"
+	sessionVolumePrefix  = "gm-session-"
+	sessionPath          = guestHome + "/.local/share/opencode/storage"
+	nestedDockerSecurity = "seccomp=unconfined"
 )
 
 func sessionVolume(name string) string {
@@ -63,6 +64,10 @@ func createArgs(spec agent_runtime.SandboxSpec, image string) []string {
 		// this container instead, so child containers can see only this
 		// sandbox's own filesystem and mounts.
 		args = append(args,
+			// RootlessKit creates a user namespace. Docker's default seccomp
+			// profile blocks that unshare even though the daemon remains
+			// rootless and confined to this container.
+			"--security-opt", nestedDockerSecurity,
 			"--env", "GO_MERGE_INSTALL_DOCKER=1",
 			"--env", "DOCKER_HOST=unix:///tmp/go-merge-docker/docker.sock",
 			"--env", "XDG_RUNTIME_DIR=/tmp/go-merge-docker",
@@ -118,6 +123,12 @@ func specFingerprint(spec agent_runtime.SandboxSpec, image string) string {
 		"image=" + image,
 		"docker=" + strconv.FormatBool(spec.InstallDocker),
 		"memory=" + containerMemoryLimit,
+	}
+	if spec.InstallDocker {
+		// Security options are fixed at container creation. Include this in the
+		// fingerprint so an existing sandbox is recreated after the nested
+		// Docker isolation changes.
+		parts = append(parts, "docker-security="+nestedDockerSecurity)
 	}
 	// Sorted, because the order the application happens to append mounts in is
 	// not a difference worth recreating a container over.

@@ -236,6 +236,29 @@ func TestAgentWorkspace_Ensure_ShouldIgnoreAMutatedCheckoutOrigin(t *testing.T) 
 	}
 }
 
+func TestAgentWorkspace_Ensure_ShouldRejectGitMetadataRedirectedByTheSandbox(t *testing.T) {
+	// Arrange: even though this checkout is mounted read-only in normal use, a
+	// host-side Git operation must not follow a persisted gitdir file elsewhere.
+	workspace, _ := localAgentWorkspace(t)
+	path, err := workspace.Ensure(context.Background(), "epic-1", "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	other := t.TempDir()
+	if _, err := git.PlainInit(filepath.Join(other, ".git"), true); err != nil {
+		t.Fatal(err)
+	}
+	replaceGitMetadata(t, path, other)
+
+	// Act
+	_, err = workspace.Ensure(context.Background(), "epic-1", "acme/widgets")
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), "unsafe .git metadata") {
+		t.Fatalf("expected redirected Git metadata to be rejected, got %v", err)
+	}
+}
+
 // Every round of an epic calls Ensure for each of its repositories, and rounds
 // run concurrently. go-git has no equivalent of git's index.lock, so without
 // serializing, two clones racing into one directory interleave their writes to

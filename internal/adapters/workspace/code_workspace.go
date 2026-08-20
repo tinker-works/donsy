@@ -115,6 +115,9 @@ func (w CodeWorkspace) open(checkout agent_runtime.CodeCheckout) (*git.Repositor
 	if err != nil {
 		return nil, "", err
 	}
+	if err := validateCheckout(path); err != nil {
+		return nil, "", fmt.Errorf("validate checkout for issue %s: %w", checkout.IssueID, err)
+	}
 	repository, err := git.PlainOpen(path)
 	if err != nil {
 		return nil, "", fmt.Errorf("open checkout for issue %s: %w", checkout.IssueID, err)
@@ -182,6 +185,9 @@ func (w CodeWorkspace) ensureClone(
 	ctx context.Context, path, repository string,
 ) (*git.Repository, error) {
 	if _, err := os.Stat(path); err == nil {
+		if err := validateCheckout(path); err != nil {
+			return nil, err
+		}
 		existing, openErr := git.PlainOpen(path)
 		if openErr != nil {
 			// A failed or interrupted clone can leave an empty checkout directory.

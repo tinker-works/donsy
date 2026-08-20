@@ -94,6 +94,41 @@ func TestIssueTreeStore_Write_ShouldRejectPathLikeTreeComponents(t *testing.T) {
 	}
 }
 
+func TestIssueTreeStore_Write_ShouldRejectAPathLikeIssueIDBeforeClearingTheTree(t *testing.T) {
+	// Arrange: issue IDs are persisted data, but writeBranch uses them as file
+	// names. Validation must happen before the existing mounted tree is cleared.
+	root := filepath.Join(t.TempDir(), "store")
+	path := filepath.Join(root, "epic", "trees", "gm-sandbox")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stale := filepath.Join(path, "stale.md")
+	if err := os.WriteFile(stale, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	escape := filepath.Join("..", "..", "..", "..", "..", "victim")
+	detail := treeEpic(t)
+	detail.Issues[1].ID = escape
+	escaped := filepath.Join(filepath.Dir(root), "victim.md")
+	if err := os.WriteFile(escaped, []byte("keep me"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Act
+	_, err := NewIssueTreeStore(root).Write("gm-sandbox", detail)
+
+	// Assert
+	if err == nil {
+		t.Fatal("expected the path-like issue ID to be rejected")
+	}
+	if contents, readErr := os.ReadFile(stale); readErr != nil || string(contents) != "keep me" {
+		t.Fatalf("expected the existing tree to remain untouched: %v, %q", readErr, contents)
+	}
+	if contents, readErr := os.ReadFile(escaped); readErr != nil || string(contents) != "keep me" {
+		t.Fatalf("expected the escaped file to remain untouched: %v, %q", readErr, contents)
+	}
+}
+
 func TestIssueTreeStore_Write_ShouldRenderTheCommentThreadsBesideTheIssues(t *testing.T) {
 	// Arrange: the agent reads the discussion as part of the tree.
 	created := time.Date(2026, 8, 12, 9, 0, 0, 0, time.UTC)

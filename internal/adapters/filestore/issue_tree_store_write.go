@@ -16,6 +16,9 @@ func (s IssueTreeStore) Write(sandboxName string, epic epicpkg.Epic) (string, er
 	if err != nil {
 		return "", err
 	}
+	if err := validateIssueIDs(epic.Issues); err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", err
 	}
