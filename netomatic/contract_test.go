@@ -14,8 +14,8 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+11 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+11)
+	if len(Contract) != ClientOperationCount+10 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+10)
 	}
 	if Contract[ClientOperationCount-1].Name != "RunOutput" {
 		t.Fatalf("last client operation = %q, want RunOutput", Contract[ClientOperationCount-1].Name)
@@ -299,6 +299,10 @@ var contractDTOs = map[string]any{
 	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
 		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
 	}},
+	"ReconcileRequest":     ReconcileRequest{Project: "demo"},
+	"ReconcileResponse":    ReconcileResponse{Reconciled: 4},
+	"PurgeRequest":         PurgeRequest{Project: "demo"},
+	"PurgeResponse":        PurgeResponse{Purged: 2},
 	"ReadDaemonLogRequest": ReadDaemonLogRequest{Offset: 32, Limit: 4},
 	"ReadDaemonLogResponse": ReadDaemonLogResponse{
 		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
@@ -316,8 +320,6 @@ var contractPathDTOs = map[string]any{
 	"GetPullRequestDiffPath":    GetPullRequestDiffPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
 	"OpenPullRequestsPath":      OpenPullRequestsPath{ProjectID: 7, EpicID: "epic-1"},
 	"AddCommentPath":            AddCommentPath{ProjectID: 7, EpicID: "epic-1"},
-	"RunIssueAgentPath":         RunIssueAgentPath{ProjectID: 7, EpicID: "epic-1", IssueID: "issue-1"},
-	"ProjectPath":               ProjectPath{ProjectID: 7},
 }
 
 var contractQueryDTOs = map[string]url.Values{

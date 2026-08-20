@@ -55,10 +55,9 @@ em dash means that the operation has no request body.
 | ReviewApprovedBranches | POST | `/api/v1/review-approved-branches` | `ReviewApprovedBranchesRequest` | `ReviewApprovedBranchesResponse` |
 | RunEpic | POST | `/api/v1/runs/epic` | `RunEpicRequest` | `RunEpicResponse` |
 | RunIssue | POST | `/api/v1/runs/issue` | `RunIssueRequest` | `RunIssueResponse` |
+| Reconcile | POST | `/api/v1/reconcile` | `ReconcileRequest` | `ReconcileResponse` |
+| Purge | POST | `/api/v1/purge` | `PurgeRequest` | `PurgeResponse` |
 | ReadDaemonLog | GET | `/api/v1/daemon-log` | `ReadDaemonLogRequest` | `ReadDaemonLogResponse` |
-| RunIssueAgent | POST | `/api/v1/projects/{projectID}/epics/{epicID}/issues/{issueID}/agent-runs` | — | — |
-| ReconcileSandboxes | POST | `/api/v1/projects/{projectID}/maintenance/reconcile` | — | — |
-| PurgeFinishedWork | POST | `/api/v1/projects/{projectID}/maintenance/purge` | — | — |
 
 `CreateIssueRequest` contains `parentId`, `title`, `body`, and `repository`.
 `parentId` may be omitted to create the aggregate root, and `body` may be
@@ -86,8 +85,3 @@ effective starting offset, so polling at EOF is stable.
 `RunOutput` accepts an optional non-negative `from` query value. `AgentActivity`
 uses repeated `runID` query values and returns the `sizes` map directly. Both
 operations send an empty query when no values are supplied.
-
-`ReconcileSandboxes` and `PurgeFinishedWork` are registered but currently
-unavailable until the worker coordinator is shared. Go Merge returns HTTP 501
-with `code: "feature_not_configured"` and the operation-specific `detail`; the
-client exposes this as `ErrUnavailable`.

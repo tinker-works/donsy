@@ -426,11 +426,6 @@ type CloseIssueRequest struct {
 type CloseIssueResponse struct {
 	Issue Issue `json:"issue"`
 }
-type ProjectPath struct{ ProjectID uint }
-type RunIssueAgentPath struct {
-	ProjectID       uint
-	EpicID, IssueID string
-}
 type CreatePullRequestPath struct {
 	ProjectID uint
 	EpicID    string
@@ -709,6 +704,18 @@ type RunIssueRequest struct {
 type RunIssueResponse struct {
 	Run AgentRun `json:"run"`
 }
+type ReconcileRequest struct {
+	Project string `json:"project,omitempty"`
+}
+type ReconcileResponse struct {
+	Reconciled int `json:"reconciled"`
+}
+type PurgeRequest struct {
+	Project string `json:"project,omitempty"`
+}
+type PurgeResponse struct {
+	Purged int `json:"purged"`
+}
 
 // Client is the complete public daemon contract. Implementations may use any
 // transport, but all methods are context-aware and exchange only these public
@@ -761,9 +768,8 @@ type Client interface {
 	ReviewApprovedBranches(context.Context, ReviewApprovedBranchesRequest) (ReviewApprovedBranchesResponse, error)
 	RunEpic(context.Context, RunEpicRequest) (RunEpicResponse, error)
 	RunIssue(context.Context, RunIssueRequest) (RunIssueResponse, error)
-	RunIssueAgent(context.Context, RunIssueAgentPath) error
-	ReconcileSandboxes(context.Context, ProjectPath) error
-	PurgeFinishedWork(context.Context, ProjectPath) error
+	Reconcile(context.Context, ReconcileRequest) (ReconcileResponse, error)
+	Purge(context.Context, PurgeRequest) (PurgeResponse, error)
 }
 
 // Operation describes one row in the daemon contract table. Path, Query, and
@@ -835,9 +841,8 @@ var Contract = []Operation{
 	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunEpic", Method: MethodPost, Route: APIPrefix + "/runs/epic", Request: "RunEpicRequest", Response: "RunEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "RunIssueAgent", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/issues/{issueID}/agent-runs", Path: "RunIssueAgentPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
-	{Name: "ReconcileSandboxes", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/maintenance/reconcile", Path: "ProjectPath", Unavailable: true, Authenticated: true},
-	{Name: "PurgeFinishedWork", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/maintenance/purge", Path: "ProjectPath", Unavailable: true, Authenticated: true},
+	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "Purge", Method: MethodPost, Route: APIPrefix + "/purge", Request: "PurgeRequest", Response: "PurgeResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ReadDaemonLog", Method: MethodGet, Route: APIPrefix + "/daemon-log", Response: "ReadDaemonLogResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 }
 
@@ -853,7 +858,7 @@ func ContractOperations() []Operation {
 const ClientOperationCount = 38
 
 // DaemonOperationCount includes every row in Contract.
-const DaemonOperationCount = 49
+const DaemonOperationCount = 48
 
 // ValidateContract catches accidental omissions when a route is added to the
 // table without a corresponding public DTO or method declaration.
