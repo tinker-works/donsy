@@ -31,9 +31,8 @@ const containerMemoryLimit = "2g"
 // It covers "storage" and not its parent: auth.json is that directory's sibling
 // and must not outlive the round on a volume nobody is watching.
 const (
-	sessionVolumePrefix  = "gm-session-"
-	sessionPath          = guestHome + "/.local/share/opencode/storage"
-	nestedDockerSecurity = "seccomp=unconfined"
+	sessionVolumePrefix = "gm-session-"
+	sessionPath         = guestHome + "/.local/share/opencode/storage"
 )
 
 func sessionVolume(name string) string {
@@ -64,9 +63,9 @@ func createArgs(spec agent_runtime.SandboxSpec, image string) []string {
 		// this container instead, so child containers can see only this
 		// sandbox's own filesystem and mounts.
 		args = append(args,
-			// RootlessKit creates a user namespace. Docker's default seccomp
-			// profile blocks that unshare even though the daemon remains
-			// rootless and confined to this container.
+			// RootlessKit's user and network namespace setup is the one exception
+			// to Docker's default seccomp policy; the custom profile retains every
+			// other default restriction.
 			"--security-opt", nestedDockerSecurity,
 			"--env", "GO_MERGE_INSTALL_DOCKER=1",
 			"--env", "DOCKER_HOST=unix:///tmp/go-merge-docker/docker.sock",

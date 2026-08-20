@@ -129,6 +129,39 @@ func TestIssueTreeStore_Write_ShouldRejectAPathLikeIssueIDBeforeClearingTheTree(
 	}
 }
 
+func TestIssueTreeStore_Write_ShouldValidateTheEpicBeforeClearingTheTree(t *testing.T) {
+	// Arrange: an invalid update must not destroy the tree an existing sandbox
+	// still has mounted.
+	store := NewIssueTreeStore(t.TempDir())
+	path, err := store.Write("gm-sandbox", treeEpic(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootFile := filepath.Join(path, "root.md")
+	before, err := os.ReadFile(rootFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	noRoot := treeEpic(t)
+	noRoot.Issues[0].ParentID = "missing"
+	mismatchedRepository := treeEpic(t)
+	mismatchedRepository.Issues[2].Repository = "acme/other"
+
+	for _, detail := range []epic.Epic{noRoot, mismatchedRepository} {
+		// Act
+		_, err := store.Write("gm-sandbox", detail)
+
+		// Assert
+		if err == nil {
+			t.Fatal("expected the malformed epic to be rejected")
+		}
+		after, readErr := os.ReadFile(rootFile)
+		if readErr != nil || string(after) != string(before) {
+			t.Fatalf("expected the mounted tree preserved: %v, %q", readErr, after)
+		}
+	}
+}
+
 func TestIssueTreeStore_Write_ShouldRenderTheCommentThreadsBesideTheIssues(t *testing.T) {
 	// Arrange: the agent reads the discussion as part of the tree.
 	created := time.Date(2026, 8, 12, 9, 0, 0, 0, time.UTC)

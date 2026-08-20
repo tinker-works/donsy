@@ -2,6 +2,7 @@ package colima
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -155,12 +156,58 @@ func TestCreateArgs_ShouldAllowRootlessDockerToCreateUserNamespaces(t *testing.T
 	// Act
 	args := createArgs(spec, "image")
 
-	// Assert: the nested daemon is rootless, but RootlessKit still needs its
-	// user-namespace unshare allowed by the outer Docker seccomp profile.
-	joined := strings.Join(args, " ")
-	if !strings.Contains(joined, "--security-opt seccomp=unconfined") {
-		t.Fatalf("expected the nested Docker security option, got %v", args)
+	// Assert: the nested daemon gets Docker's ordinary restrictive profile plus
+	// only the namespace calls RootlessKit needs to create its rootless daemon.
+	profile := nestedDockerProfile(t, args)
+	if profile.DefaultAction != "SCMP_ACT_ERRNO" {
+		t.Fatalf("expected Docker's restrictive default action, got %q", profile.DefaultAction)
 	}
+	if !profile.allows("clone", nestedDockerUserMountNamespaces) {
+		t.Fatalf("expected RootlessKit's user and mount namespace clone allowed: %+v", profile.Syscalls)
+	}
+	if !profile.allows("unshare", nestedDockerNetworkNamespace) {
+		t.Fatalf("expected RootlessKit's network namespace unshare allowed: %+v", profile.Syscalls)
+	}
+}
+
+type nestedSeccompProfile struct {
+	DefaultAction string        `json:"defaultAction"`
+	Syscalls      []seccompRule `json:"syscalls"`
+}
+
+func nestedDockerProfile(t *testing.T, args []string) nestedSeccompProfile {
+	t.Helper()
+	for index, arg := range args {
+		if arg != "--security-opt" || index+1 == len(args) {
+			continue
+		}
+		profile := strings.TrimPrefix(args[index+1], "seccomp=")
+		if profile == args[index+1] {
+			continue
+		}
+		var parsed nestedSeccompProfile
+		if err := json.Unmarshal([]byte(profile), &parsed); err != nil {
+			t.Fatalf("parse nested Docker seccomp profile: %v", err)
+		}
+		return parsed
+	}
+	t.Fatalf("expected a nested Docker seccomp profile, got %v", args)
+	return nestedSeccompProfile{}
+}
+
+func (p nestedSeccompProfile) allows(name string, valueTwo uint64) bool {
+	for _, rule := range p.Syscalls {
+		if len(rule.Names) != 1 || rule.Names[0] != name || rule.Action != "SCMP_ACT_ALLOW" ||
+			len(rule.Args) != 1 {
+			continue
+		}
+		arg := rule.Args[0]
+		if arg.Index == 0 && arg.Value == nestedDockerNamespaceFlags &&
+			arg.ValueTwo == valueTwo && arg.Op == "SCMP_CMP_MASKED_EQ" {
+			return true
+		}
+	}
+	return false
 }
 
 // Everything the user types `docker` for goes to whatever context is active,

@@ -20,6 +20,10 @@ func (s IssueTreeStore) Write(sandboxName string, epic epicpkg.Epic) (string, er
 	if err := validateIssueIDs(epic.Issues); err != nil {
 		return "", err
 	}
+	root, children, err := validateTreeStructure(epic)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", err
 	}
@@ -35,17 +39,12 @@ func (s IssueTreeStore) Write(sandboxName string, epic epicpkg.Epic) (string, er
 	if err := clearDirectory(path); err != nil {
 		return "", err
 	}
-	root, err := epic.RootIssue()
-	if err != nil {
-		return "", err
-	}
 	if err := writeIssueFile(path, "root.md", root, nil); err != nil {
 		return "", err
 	}
 	if err := writeIssueComments(path, "root-comments.md", root.Comments); err != nil {
 		return "", err
 	}
-	children := childrenByParent(epic.Issues)
 	// The whole map is needed before the first file is written: an issue can wait
 	// on one that is written later, and the reference is a path to its file.
 	paths := treePaths(root, children)
@@ -58,6 +57,44 @@ func (s IssueTreeStore) Write(sandboxName string, epic epicpkg.Epic) (string, er
 		}
 	}
 	return path, nil
+}
+
+func validateTreeStructure(epic epicpkg.Epic) (epicpkg.Issue, map[string][]epicpkg.Issue, error) {
+	root, err := epic.RootIssue()
+	if err != nil {
+		return epicpkg.Issue{}, nil, err
+	}
+	children := childrenByParent(epic.Issues)
+	var validateBranch func(epicpkg.Issue) error
+	validateBranch = func(issue epicpkg.Issue) error {
+		if issue.State == epicpkg.IssueStateClosed {
+			return nil
+		}
+		for _, child := range children[issue.ID] {
+			if child.State == epicpkg.IssueStateClosed {
+				continue
+			}
+			if child.Repository != issue.Repository {
+				return fmt.Errorf("issue %q has child %q in another repository", issue.ID, child.ID)
+			}
+			if err := validateBranch(child); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+	for _, issue := range children[root.ID] {
+		if issue.State == epicpkg.IssueStateClosed {
+			continue
+		}
+		if issue.Repository == "" {
+			return epicpkg.Issue{}, nil, fmt.Errorf("issue %q has no repository", issue.ID)
+		}
+		if err := validateBranch(issue); err != nil {
+			return epicpkg.Issue{}, nil, err
+		}
+	}
+	return root, children, nil
 }
 
 // treePaths locates every issue the tree will hold, keyed by ID and relative to
