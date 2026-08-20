@@ -19,8 +19,9 @@ type CreateIssueUseCase struct {
 	factory application.WorkspaceFactory
 }
 
-func (u *CreateIssueUseCase) Handle(command CreateIssueCommand) error {
-	return updateEpic(u.factory, command.Project, command.EpicID,
+func (u *CreateIssueUseCase) Handle(command CreateIssueCommand) (epic.Issue, error) {
+	var created epic.Issue
+	err := updateEpic(u.factory, command.Project, command.EpicID,
 		func(detail *epic.Epic) error {
 			issue, err := epic.CreateRepositoryIssue(command.Title, command.Body, command.Repository)
 			if err != nil {
@@ -34,6 +35,15 @@ func (u *CreateIssueUseCase) Handle(command CreateIssueCommand) error {
 				}
 				parentID = root.ID
 			}
-			return detail.AddIssue(parentID, issue)
+			if err := detail.AddIssue(parentID, issue); err != nil {
+				return err
+			}
+			issue.ParentID = parentID
+			created = issue
+			return nil
 		})
+	if err != nil {
+		return epic.Issue{}, err
+	}
+	return created, nil
 }

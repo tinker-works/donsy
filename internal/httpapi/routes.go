@@ -1,7 +1,9 @@
 package httpapi
 
 import (
+	"bufio"
 	"errors"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -204,21 +206,23 @@ func (s *Server) createEpic(w http.ResponseWriter, r *http.Request) {
 		err = projectErr
 	}
 	if err == nil && request.Project != "" && request.Project != project.Name {
-		err = errors.New("project does not match request path")
+		err = errInvalidRequest("project does not match request path")
 	}
 	if err == nil && s.useCases.CreateEpic == nil {
 		err = errUnavailable("creating epics")
 	}
 	if err == nil {
-		err = s.useCases.CreateEpic.Handle(usecases.CreateEpicCommand{Project: project, Title: request.Title, Assignee: s.useCases.CurrentUser, Body: request.Description})
+		var epic epicpkg.Epic
+		epic, err = s.useCases.CreateEpic.Handle(usecases.CreateEpicCommand{Project: project, Title: request.Title, Assignee: s.useCases.CurrentUser, Body: request.Description})
+		if err == nil {
+			s.writeJSON(w, http.StatusOK, netomatic.CreateEpicResponse{Epic: epicResponse(epic)})
+			return
+		}
 	}
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
-	// Creation does not return an ID from the application layer, so the created
-	// value cannot be selected reliably without a race against another client.
-	s.fail(w, errUnavailable("returning a newly created epic"))
 }
 
 func (s *Server) prefixEpic(w http.ResponseWriter, r *http.Request) { s.mutateEpic(w, r, "prefix") }
@@ -234,7 +238,7 @@ func (s *Server) mutateEpic(w http.ResponseWriter, r *http.Request, action strin
 			var request netomatic.PrefixEpicRequest
 			err = s.decode(r, &request)
 			if err == nil && (request.Project != project.Name || request.Epic != r.PathValue("epic")) {
-				err = errors.New("request does not match path")
+				err = errInvalidRequest("request does not match path")
 			}
 			if err == nil && s.useCases.SetBranchPrefix == nil {
 				err = errUnavailable("setting epic prefixes")
@@ -246,7 +250,7 @@ func (s *Server) mutateEpic(w http.ResponseWriter, r *http.Request, action strin
 			var request netomatic.TransitionEpicRequest
 			err = s.decode(r, &request)
 			if err == nil && (request.Project != project.Name || request.Epic != r.PathValue("epic")) {
-				err = errors.New("request does not match path")
+				err = errInvalidRequest("request does not match path")
 			}
 			if err == nil && s.useCases.TransitionEpicState == nil {
 				err = errUnavailable("transitioning epics")
@@ -319,7 +323,38 @@ func (s *Server) getIssue(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
-	s.unavailable("creating issues without repository and parent inputs")(w, r)
+	var request netomatic.CreateIssueRequest
+	err := s.decode(r, &request)
+	project, projectErr := s.projectName(r)
+	if err == nil {
+		err = projectErr
+	}
+	if err == nil && (request.Project != project.Name || request.Epic != r.PathValue("epic")) {
+		err = errInvalidRequest("request does not match path")
+	}
+	if err == nil && s.useCases.CreateIssue == nil {
+		err = errUnavailable("creating issues")
+	}
+	if err == nil {
+		var epic epicpkg.Epic
+		epic, err = s.getEpicValue(r)
+		if err == nil && len(epic.Repositories) == 0 {
+			err = errInvalidRequest("epic has no repository for the new issue")
+		}
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		issue, handleErr := s.useCases.CreateIssue.Handle(usecases.CreateIssueCommand{
+			Project: project, EpicID: request.Epic, Title: request.Title, Body: request.Description, Repository: epic.Repositories[0],
+		})
+		err = handleErr
+		if err == nil {
+			s.writeJSON(w, http.StatusOK, netomatic.CreateIssueResponse{Issue: issueResponse(issue)})
+			return
+		}
+	}
+	s.fail(w, err)
 }
 
 func (s *Server) closeIssue(w http.ResponseWriter, r *http.Request) {
@@ -477,7 +512,7 @@ func (s *Server) addComment(w http.ResponseWriter, r *http.Request) {
 	}
 	target := usecases.CommentTarget(request.Target)
 	if err == nil && target != usecases.IssueCommentTarget && target != usecases.PullRequestCommentTarget {
-		err = errors.New("target must be issue or pull_request")
+		err = errInvalidRequest("target must be issue or pull_request")
 	}
 	if err == nil && s.useCases.AddComment == nil {
 		err = errUnavailable("adding comments")
@@ -712,7 +747,7 @@ func (s *Server) runOutput(w http.ResponseWriter, r *http.Request) {
 	}
 	offset, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
 	if r.URL.Query().Get("offset") != "" && (err != nil || offset < 0) {
-		s.fail(w, errors.New("offset must be a non-negative integer"))
+		s.fail(w, errInvalidRequest("offset must be a non-negative integer"))
 		return
 	}
 	page, err := s.useCases.ReadRunOutput.Handle(usecases.ReadRunOutputQuery{RunID: r.PathValue("run"), From: offset})
@@ -741,20 +776,20 @@ func (s *Server) readDaemonLog(w http.ResponseWriter, r *http.Request) {
 	}
 	offset, err := strconv.ParseInt(r.URL.Query().Get("offset"), 10, 64)
 	if err != nil {
-		s.fail(w, errors.New("offset must be an integer"))
+		s.fail(w, errInvalidRequest("offset must be an integer"))
 		return
 	}
 	limit, err := strconv.Atoi(r.URL.Query().Get("limit"))
 	if err != nil {
-		s.fail(w, errors.New("limit must be an integer"))
+		s.fail(w, errInvalidRequest("limit must be an integer"))
 		return
 	}
 	request, err := netomatic.BoundDaemonLogRequest(netomatic.ReadDaemonLogRequest{Offset: offset, Limit: limit})
 	if err != nil {
-		s.fail(w, err)
+		s.fail(w, errInvalidRequest(err.Error()))
 		return
 	}
-	content, err := os.ReadFile(s.daemonLogPath)
+	file, err := os.Open(s.daemonLogPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			s.fail(w, errUnavailable("daemon log"))
@@ -763,10 +798,107 @@ func (s *Server) readDaemonLog(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	response, err := netomatic.PageDaemonLog(content, request)
+	defer func() {
+		if err := file.Close(); err != nil {
+			s.logger.Error("close daemon log", "error", err)
+		}
+	}()
+	info, err := file.Stat()
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	response, err := pageDaemonLog(file, info.Size(), request)
 	if err != nil {
 		s.fail(w, err)
 		return
 	}
 	s.writeJSON(w, http.StatusOK, response)
+}
+
+func pageDaemonLog(file *os.File, size int64, request netomatic.ReadDaemonLogRequest) (netomatic.ReadDaemonLogResponse, error) {
+	start := request.Offset
+	reset := start > size
+	if reset {
+		start = 0
+	}
+	if start > 0 {
+		var previous [1]byte
+		if _, err := file.ReadAt(previous[:], start-1); err != nil {
+			return netomatic.ReadDaemonLogResponse{}, err
+		}
+		if previous[0] != '\n' {
+			cursor, complete, err := skipLogRecord(file, start, size)
+			if err != nil {
+				return netomatic.ReadDaemonLogResponse{}, err
+			}
+			if !complete {
+				return netomatic.ReadDaemonLogResponse{NextOffset: cursor, OffsetReset: reset}, nil
+			}
+			start = cursor
+		}
+	}
+	if _, err := file.Seek(start, io.SeekStart); err != nil {
+		return netomatic.ReadDaemonLogResponse{}, err
+	}
+	reader := bufio.NewReader(io.LimitReader(file, size-start))
+	cursor := start
+	usedBytes := 0
+	lines := make([]string, 0, request.Limit)
+	for len(lines) < request.Limit && cursor < size {
+		line, length, complete, oversized, err := readLogRecord(reader)
+		if err != nil {
+			return netomatic.ReadDaemonLogResponse{}, err
+		}
+		if !complete {
+			break
+		}
+		if oversized {
+			cursor += int64(length)
+			continue
+		}
+		if usedBytes+length > netomatic.MaxDaemonLogBytes {
+			break
+		}
+		lines = append(lines, string(line[:len(line)-1]))
+		usedBytes += length
+		cursor += int64(length)
+	}
+	return netomatic.ReadDaemonLogResponse{Lines: lines, NextOffset: cursor, OffsetReset: reset}, nil
+}
+
+func skipLogRecord(file *os.File, start, size int64) (int64, bool, error) {
+	if _, err := file.Seek(start, io.SeekStart); err != nil {
+		return 0, false, err
+	}
+	_, length, complete, _, err := readLogRecord(bufio.NewReader(io.LimitReader(file, size-start)))
+	return start + int64(length), complete, err
+}
+
+func readLogRecord(reader *bufio.Reader) ([]byte, int, bool, bool, error) {
+	var line []byte
+	length := 0
+	oversized := false
+	for {
+		fragment, err := reader.ReadSlice('\n')
+		length += len(fragment)
+		if !oversized {
+			if length > netomatic.MaxDaemonLogBytes {
+				oversized = true
+				line = nil
+			} else {
+				line = append(line, fragment...)
+			}
+		}
+		switch {
+		case err == nil:
+			return line, length, true, oversized, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			return nil, length, false, oversized, nil
+		default:
+			return nil, 0, false, false, err
+		}
+	}
 }

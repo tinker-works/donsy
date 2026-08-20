@@ -5,7 +5,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -160,15 +159,15 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 
 func (s *Server) decode(r *http.Request, value any) error {
 	if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/json") {
-		return fmt.Errorf("Content-Type must be application/json")
+		return errInvalidRequest("Content-Type must be application/json")
 	}
 	decoder := json.NewDecoder(r.Body)
 	decoder.DisallowUnknownFields()
 	if err := decoder.Decode(value); err != nil {
-		return fmt.Errorf("request body must be valid JSON")
+		return errInvalidRequest("request body must be valid JSON")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
-		return fmt.Errorf("request body must contain one JSON value")
+		return errInvalidRequest("request body must contain one JSON value")
 	}
 	return nil
 }
@@ -176,7 +175,7 @@ func (s *Server) decode(r *http.Request, value any) error {
 func (s *Server) projectID(r *http.Request) (domain.Project, error) {
 	id, err := strconv.ParseUint(r.PathValue("projectID"), 10, 64)
 	if err != nil || id == 0 {
-		return domain.Project{}, fmt.Errorf("projectID must be a positive integer")
+		return domain.Project{}, errInvalidRequest("projectID must be a positive integer")
 	}
 	return s.findProject(func(project domain.Project) bool { return project.ID == uint(id) })
 }
@@ -215,6 +214,11 @@ func (s *Server) writeError(w http.ResponseWriter, status int, code netomatic.Er
 }
 
 func (s *Server) fail(w http.ResponseWriter, err error) {
+	var invalid invalidRequest
+	if errors.As(err, &invalid) {
+		s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, invalid.Error())
+		return
+	}
 	var unavailable featureUnavailable
 	if errors.As(err, &unavailable) {
 		s.writeError(w, http.StatusNotImplemented, netomatic.ErrorFeatureNotConfigured, unavailable.Error())
@@ -229,8 +233,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		s.writeError(w, http.StatusNotFound, netomatic.ErrorNotFound, err.Error())
 		return
 	}
-	s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, err.Error())
+	s.logger.Error("HTTP API request failed", "error", err)
+	s.writeError(w, http.StatusInternalServerError, netomatic.ErrorInternal, "the daemon could not process the request")
 }
+
+type invalidRequest string
+
+func (e invalidRequest) Error() string      { return string(e) }
+func errInvalidRequest(detail string) error { return invalidRequest(detail) }
 
 type featureUnavailable string
 

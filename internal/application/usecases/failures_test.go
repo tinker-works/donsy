@@ -132,7 +132,7 @@ func TestCreateEpicUseCase_ShouldSlugTheBranchPrefixItStores(t *testing.T) {
 	useCase := &CreateEpicUseCase{factory: factory}
 
 	// Act
-	err := useCase.Handle(CreateEpicCommand{
+	_, err := useCase.Handle(CreateEpicCommand{
 		Project: project(), Title: "Epic", Assignee: "owner", BranchPrefix: "JIRA 123/../x",
 	})
 
@@ -155,7 +155,7 @@ func TestCreateEpicUseCase_ShouldRefuseAnEpicItCannotScope(t *testing.T) {
 	useCase := &CreateEpicUseCase{factory: healthy()}
 
 	// Act
-	err := useCase.Handle(CreateEpicCommand{
+	_, err := useCase.Handle(CreateEpicCommand{
 		Project: project(), Title: "Epic", Assignee: "owner",
 	})
 
@@ -177,7 +177,7 @@ func TestCreateEpicUseCase_ShouldRefuseARepositoryTheProjectDoesNotConfigure(t *
 		{"acme/api", "acme/api"},
 		{"  "},
 	} {
-		err := useCase.Handle(CreateEpicCommand{
+		_, err := useCase.Handle(CreateEpicCommand{
 			Project: project(), Title: "Epic", Assignee: "owner", Repositories: requested,
 		})
 		if err == nil {
@@ -193,7 +193,7 @@ func TestCreateEpicUseCase_ShouldSurfaceAFailedWrite(t *testing.T) {
 	useCase := &CreateEpicUseCase{factory: factory}
 
 	// Act & Assert
-	err := useCase.Handle(CreateEpicCommand{
+	_, err := useCase.Handle(CreateEpicCommand{
 		Project: project(), Title: "Epic", Assignee: "owner",
 	})
 	if err == nil {
@@ -208,7 +208,7 @@ func TestCreateIssueUseCase_ShouldFallBackToTheRootAsParent(t *testing.T) {
 	useCase := &CreateIssueUseCase{factory: factory}
 
 	// Act
-	err := useCase.Handle(CreateIssueCommand{
+	_, err := useCase.Handle(CreateIssueCommand{
 		Project: project(), EpicID: "aggregate",
 		Title: "Child", Repository: "acme/api",
 	})
@@ -235,7 +235,7 @@ func TestCreateIssueUseCase_ShouldReportAnEpicWithNoTree(t *testing.T) {
 	useCase := &CreateIssueUseCase{factory: factory}
 
 	// Act & Assert
-	err := useCase.Handle(CreateIssueCommand{
+	_, err := useCase.Handle(CreateIssueCommand{
 		Project: project(), EpicID: "aggregate", Title: "Child", Repository: "acme/api",
 	})
 	if err == nil {
@@ -248,7 +248,7 @@ func TestCreateIssueUseCase_ShouldRefuseATitlelessIssue(t *testing.T) {
 	useCase := &CreateIssueUseCase{factory: healthy()}
 
 	// Act & Assert
-	err := useCase.Handle(CreateIssueCommand{
+	_, err := useCase.Handle(CreateIssueCommand{
 		Project: project(), EpicID: "aggregate", Title: "  ", Repository: "acme/api",
 	})
 	if err == nil {
