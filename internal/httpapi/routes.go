@@ -27,9 +27,9 @@ func (s *Server) capabilities(w http.ResponseWriter, _ *http.Request) {
 		"syncRepositories":      s.useCases.SyncRepositories != nil,
 		"listRepositories":      s.useCases.ListRepositories != nil,
 		"readRunOutput":         s.useCases.ReadRunOutput != nil,
-		"reconcileSandboxes":    s.useCases.ReconcileSandboxes != nil,
-		"runEpicAgent":          s.useCases.RunEpicAgent != nil,
-		"runIssueAgent":         s.useCases.RunIssueAgent != nil,
+		"reconcileSandboxes":    false,
+		"runEpicAgent":          false,
+		"runIssueAgent":         false,
 		"cancelAgentRun":        s.useCases.CancelAgentRun != nil,
 		"resetIssue":            s.useCases.ResetIssue != nil,
 	})
@@ -62,8 +62,8 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	if strings.TrimSpace(request.Name) == "" {
-		s.fail(w, errInvalidRequest("project name is required"))
+	if !validProjectName(request.Name) {
+		s.fail(w, errInvalidRequest("project name must contain only letters, numbers, and dashes"))
 		return
 	}
 	project, err := s.useCases.CreateProject.Handle(usecases.CreateProjectCommand{Name: request.Name})
@@ -153,6 +153,9 @@ func (s *Server) initialiseStore(w http.ResponseWriter, r *http.Request) {
 	if err == nil && s.useCases.InitialiseStore == nil {
 		err = errUnavailable("initialising stores")
 	}
+	if err == nil && strings.TrimSpace(request.Model) == "" {
+		err = errInvalidRequest("a model is required to initialise the store")
+	}
 	if err == nil {
 		err = s.useCases.InitialiseStore.Handle(usecases.InitialiseStoreCommand{Project: project, Model: request.Model, Variant: request.Variant, Repositories: request.Repositories})
 	}
@@ -240,6 +243,9 @@ func (s *Server) transitionEpic(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) mutateEpic(w http.ResponseWriter, r *http.Request, action string) {
 	project, err := s.projectName(r)
+	if err == nil && s.useCases.GetEpic == nil {
+		err = errUnavailable("reading epics")
+	}
 	if err == nil {
 		switch action {
 		case "prefix":
@@ -259,6 +265,9 @@ func (s *Server) mutateEpic(w http.ResponseWriter, r *http.Request, action strin
 			err = s.decode(r, &request)
 			if err == nil && (request.Project != project.Name || request.Epic != r.PathValue("epic")) {
 				err = errInvalidRequest("request does not match path")
+			}
+			if err == nil && !validEpicState(epicpkg.EpicState(request.Status)) {
+				err = errInvalidRequest("status is not a valid epic state")
 			}
 			if err == nil && s.useCases.TransitionEpicState == nil {
 				err = errUnavailable("transitioning epics")
@@ -288,6 +297,9 @@ func (s *Server) closeEpic(w http.ResponseWriter, r *http.Request) {
 	project, err := s.projectName(r)
 	if err == nil && s.useCases.CloseEpic == nil {
 		err = errUnavailable("closing epics")
+	}
+	if err == nil && s.useCases.GetEpic == nil {
+		err = errUnavailable("reading epics")
 	}
 	if err == nil {
 		err = s.useCases.CloseEpic.Handle(r.Context(), usecases.CloseEpicCommand{Project: project, EpicID: r.PathValue("epic")})
@@ -373,6 +385,9 @@ func (s *Server) closeIssue(w http.ResponseWriter, r *http.Request) {
 	if err == nil && s.useCases.CloseIssue == nil {
 		err = errUnavailable("closing issues")
 	}
+	if err == nil && s.useCases.GetEpic == nil {
+		err = errUnavailable("reading epics")
+	}
 	if err == nil {
 		err = s.useCases.CloseIssue.Handle(r.Context(), usecases.CloseIssueCommand{Project: project, EpicID: r.PathValue("epic"), IssueID: r.PathValue("issue")})
 	}
@@ -403,6 +418,9 @@ func (s *Server) createPullRequest(w http.ResponseWriter, r *http.Request) {
 	if err == nil && s.useCases.CreatePullRequest == nil {
 		err = errUnavailable("creating pull requests")
 	}
+	if err == nil && (strings.TrimSpace(request.IssueID) == "" || strings.TrimSpace(request.Title) == "") {
+		err = errInvalidRequest("pull request issue and title are required")
+	}
 	if err == nil {
 		err = s.useCases.CreatePullRequest.Handle(usecases.CreatePullRequestCommand{Project: project, EpicID: r.PathValue("epicID"), IssueID: request.IssueID, Title: request.Title, Repository: request.Repository, Head: request.Head, Base: request.Base})
 	}
@@ -422,6 +440,9 @@ func (s *Server) transitionPullRequest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil && s.useCases.TransitionPullRequest == nil {
 		err = errUnavailable("transitioning pull requests")
+	}
+	if err == nil && epicpkg.PullRequestStatus(request.Status) != epicpkg.PullRequestClosed {
+		err = errInvalidRequest("only closed pull request status can be recorded")
 	}
 	if err == nil {
 		err = s.useCases.TransitionPullRequest.Handle(r.Context(), usecases.TransitionPullRequestCommand{Project: project, EpicID: r.PathValue("epicID"), PullRequestID: r.PathValue("pullRequestID"), Status: epicpkg.PullRequestStatus(request.Status)})
@@ -558,6 +579,9 @@ func (s *Server) listOrganisations(w http.ResponseWriter, _ *http.Request) {
 func (s *Server) addOrganisation(w http.ResponseWriter, r *http.Request) {
 	var request netomatic.AddOrganisationRequest
 	err := s.decode(r, &request)
+	if err == nil && strings.TrimSpace(request.Name) == "" {
+		err = errInvalidRequest("organisation name is required")
+	}
 	if err == nil && s.useCases.AddOrganisation == nil {
 		err = errUnavailable("adding organisations")
 	}
@@ -572,7 +596,9 @@ func (s *Server) addOrganisation(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) removeOrganisation(w http.ResponseWriter, r *http.Request) {
 	var err error
-	if s.useCases.RemoveOrganisation == nil {
+	if strings.TrimSpace(r.PathValue("name")) == "" {
+		err = errInvalidRequest("organisation name is required")
+	} else if s.useCases.RemoveOrganisation == nil {
 		err = errUnavailable("removing organisations")
 	} else {
 		err = s.useCases.RemoveOrganisation.Handle(r.PathValue("name"))
@@ -912,6 +938,23 @@ func (s *Server) runEpic(w http.ResponseWriter, r *http.Request) {
 }
 func (s *Server) runIssue(w http.ResponseWriter, r *http.Request) {
 	s.unavailable("manual issue agent execution")(w, r)
+}
+
+func validEpicState(state epicpkg.EpicState) bool {
+	switch state {
+	case epicpkg.EpicStateConcept,
+		epicpkg.EpicStateRefine,
+		epicpkg.EpicStateReview,
+		epicpkg.EpicStateChangesRequested,
+		epicpkg.EpicStateProposed,
+		epicpkg.EpicStateReady,
+		epicpkg.EpicStateDone,
+		epicpkg.EpicStateClosed,
+		epicpkg.EpicStateFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) readDaemonLog(w http.ResponseWriter, r *http.Request) {

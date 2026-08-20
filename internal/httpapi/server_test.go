@@ -34,16 +34,194 @@ func TestHTTPServerReportsDocumentedUnavailableOperations(t *testing.T) {
 	}
 
 	for _, operation := range netomatic.ContractOperations() {
+		if operation.Unavailable {
+			t.Run(operation.Name, func(t *testing.T) {
+				err := callOperation(client, operation.Name)
+				var apiError *netomatic.APIError
+				if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != netomatic.ErrorFeatureNotConfigured {
+					t.Fatalf("%s() error = %#v, want feature_not_configured", operation.Name, err)
+				}
+			})
+		}
+	}
+}
+
+func TestHTTPServerInteroperatesWithEveryContractOperation(t *testing.T) {
+	available := map[string]func(*netomatic.HTTPClient) error{
+		"Process":      func(c *netomatic.HTTPClient) error { _, err := c.Process(context.Background()); return err },
+		"ListProjects": func(c *netomatic.HTTPClient) error { _, err := c.ListProjects(context.Background()); return err },
+		"CreateProject": func(c *netomatic.HTTPClient) error {
+			_, err := c.CreateProject(context.Background(), netomatic.CreateProjectRequest{Name: "extra"})
+			return err
+		},
+		"OpenProject": func(c *netomatic.HTTPClient) error {
+			return c.OpenProject(context.Background(), netomatic.ProjectPath{ProjectID: 1})
+		},
+		"ForgetProject": func(c *netomatic.HTTPClient) error {
+			return c.ForgetProject(context.Background(), netomatic.ProjectPath{ProjectID: 1})
+		},
+		"ListProjectSummaries": func(c *netomatic.HTTPClient) error {
+			_, err := c.ListProjectSummaries(context.Background())
+			return err
+		},
+		"StoreSetup": func(c *netomatic.HTTPClient) error {
+			_, err := c.StoreSetup(context.Background(), netomatic.ProjectPath{ProjectID: 1})
+			return err
+		},
+		"InitialiseStore": func(c *netomatic.HTTPClient) error {
+			return c.InitialiseStore(context.Background(), netomatic.ProjectPath{ProjectID: 1}, netomatic.InitialiseStoreRequest{Model: "openai/gpt"})
+		},
+		"ListEpics": func(c *netomatic.HTTPClient) error {
+			_, err := c.ListEpics(context.Background(), netomatic.ListEpicsRequest{Project: "demo"})
+			return err
+		},
+		"GetEpic": func(c *netomatic.HTTPClient) error {
+			_, err := c.GetEpic(context.Background(), netomatic.GetEpicRequest{Project: "demo", Epic: "epic"})
+			return err
+		},
+		"CreateEpic": func(c *netomatic.HTTPClient) error {
+			_, err := c.CreateEpic(context.Background(), netomatic.CreateEpicRequest{Project: "demo", Title: "New epic"})
+			return err
+		},
+		"PrefixEpic": func(c *netomatic.HTTPClient) error {
+			_, err := c.PrefixEpic(context.Background(), netomatic.PrefixEpicRequest{Project: "demo", Epic: "epic", Prefix: "work"})
+			return err
+		},
+		"TransitionEpic": func(c *netomatic.HTTPClient) error {
+			_, err := c.TransitionEpic(context.Background(), netomatic.TransitionEpicRequest{Project: "demo", Epic: "epic", Status: string(epicpkg.EpicStateRefine)})
+			return err
+		},
+		"CloseEpic": func(c *netomatic.HTTPClient) error {
+			_, err := c.CloseEpic(context.Background(), netomatic.CloseEpicRequest{Project: "demo", Epic: "epic"})
+			return err
+		},
+		"ListIssues": func(c *netomatic.HTTPClient) error {
+			_, err := c.ListIssues(context.Background(), netomatic.ListIssuesRequest{Project: "demo", Epic: "epic"})
+			return err
+		},
+		"GetIssue": func(c *netomatic.HTTPClient) error {
+			_, err := c.GetIssue(context.Background(), netomatic.GetIssueRequest{Project: "demo", Epic: "epic", Issue: "root"})
+			return err
+		},
+		"CreateIssue": func(c *netomatic.HTTPClient) error {
+			_, err := c.CreateIssue(context.Background(), netomatic.CreateIssueRequest{Project: "demo", Epic: "epic", Title: "New issue"})
+			return err
+		},
+		"CloseIssue": func(c *netomatic.HTTPClient) error {
+			_, err := c.CloseIssue(context.Background(), netomatic.CloseIssueRequest{Project: "demo", Epic: "epic", Issue: "root"})
+			return err
+		},
+		"CreatePullRequest": func(c *netomatic.HTTPClient) error {
+			return c.CreatePullRequest(context.Background(), netomatic.CreatePullRequestPath{ProjectID: 1, EpicID: "epic"}, netomatic.CreatePullRequestRequest{IssueID: "root", Title: "New pull request", Repository: "acme/widgets", Head: "feature", Base: "main"})
+		},
+		"TransitionPullRequest": func(c *netomatic.HTTPClient) error {
+			return c.TransitionPullRequest(context.Background(), netomatic.TransitionPullRequestPath{ProjectID: 1, EpicID: "epic", PullRequestID: "pr"}, netomatic.TransitionPullRequestRequest{Status: string(epicpkg.PullRequestClosed)})
+		},
+		"GrantCodingRound": func(c *netomatic.HTTPClient) error {
+			return c.GrantCodingRound(context.Background(), netomatic.GrantCodingRoundPath{ProjectID: 1, EpicID: "epic", PullRequestID: "pr"})
+		},
+		"MergePullRequest": func(c *netomatic.HTTPClient) error {
+			_, err := c.MergePullRequest(context.Background(), netomatic.MergePullRequestPath{ProjectID: 1, EpicID: "epic", PullRequestID: "pr"})
+			return err
+		},
+		"ResetIssue": func(c *netomatic.HTTPClient) error {
+			return c.ResetIssue(context.Background(), netomatic.ResetIssuePath{ProjectID: 1, EpicID: "epic", PullRequestID: "pr"})
+		},
+		"GetPullRequestDiff": func(c *netomatic.HTTPClient) error {
+			_, err := c.GetPullRequestDiff(context.Background(), netomatic.GetPullRequestDiffPath{ProjectID: 1, EpicID: "epic", PullRequestID: "pr"})
+			return err
+		},
+		"OpenPullRequests": func(c *netomatic.HTTPClient) error {
+			_, err := c.OpenPullRequests(context.Background(), netomatic.OpenPullRequestsPath{ProjectID: 1, EpicID: "epic"})
+			return err
+		},
+		"AddComment": func(c *netomatic.HTTPClient) error {
+			return c.AddComment(context.Background(), netomatic.AddCommentPath{ProjectID: 1, EpicID: "epic"}, netomatic.AddCommentRequest{Target: netomatic.IssueCommentTarget, TargetID: "root", Body: "Note"})
+		},
+		"ListOrganisations": func(c *netomatic.HTTPClient) error { _, err := c.ListOrganisations(context.Background()); return err },
+		"AddOrganisation": func(c *netomatic.HTTPClient) error {
+			return c.AddOrganisation(context.Background(), netomatic.AddOrganisationRequest{Name: "acme"})
+		},
+		"RemoveOrganisation": func(c *netomatic.HTTPClient) error {
+			return c.RemoveOrganisation(context.Background(), netomatic.RemoveOrganisationPath{Name: "acme"})
+		},
+		"DiscoverOrganisations": func(c *netomatic.HTTPClient) error {
+			_, err := c.DiscoverOrganisations(context.Background())
+			return err
+		},
+		"ListRepositories": func(c *netomatic.HTTPClient) error { _, err := c.ListRepositories(context.Background()); return err },
+		"SyncRepositories": func(c *netomatic.HTTPClient) error { return c.SyncRepositories(context.Background()) },
+		"ListProjectRepositories": func(c *netomatic.HTTPClient) error {
+			_, err := c.ListProjectRepositories(context.Background(), netomatic.ListProjectRepositoriesPath{ProjectID: 1})
+			return err
+		},
+		"UpdateProjectRepositories": func(c *netomatic.HTTPClient) error {
+			return c.UpdateProjectRepositories(context.Background(), netomatic.UpdateProjectRepositoriesPath{ProjectID: 1}, netomatic.UpdateProjectRepositoriesRequest{Repositories: []string{"acme/widgets"}})
+		},
+		"GetAgentSettings": func(c *netomatic.HTTPClient) error {
+			_, err := c.GetAgentSettings(context.Background(), netomatic.GetAgentSettingsRequest{Project: "demo"})
+			return err
+		},
+		"ListAgentRuns": func(c *netomatic.HTTPClient) error {
+			_, err := c.ListAgentRuns(context.Background(), netomatic.ListAgentRunsRequest{Project: "demo"})
+			return err
+		},
+		"ListSandboxes": func(c *netomatic.HTTPClient) error {
+			_, err := c.ListSandboxes(context.Background(), netomatic.ListSandboxesRequest{})
+			return err
+		},
+		"CancelAgentRun": func(c *netomatic.HTTPClient) error {
+			_, err := c.CancelAgentRun(context.Background(), netomatic.CancelAgentRunRequest{Run: "run"})
+			return err
+		},
+		"AgentActivity": func(c *netomatic.HTTPClient) error {
+			_, err := c.AgentActivity(context.Background(), netomatic.AgentActivityRequest{Run: "run"})
+			return err
+		},
+		"RunOutput": func(c *netomatic.HTTPClient) error {
+			_, err := c.RunOutput(context.Background(), netomatic.RunOutputRequest{Run: "run", Offset: 0})
+			return err
+		},
+		"Capabilities": func(c *netomatic.HTTPClient) error { _, err := c.Capabilities(context.Background()); return err },
+		"AddRepository": func(c *netomatic.HTTPClient) error {
+			_, err := c.AddRepository(context.Background(), netomatic.AddRepositoryRequest{FullName: "acme/widgets"})
+			return err
+		},
+		"GetAgentRun": func(c *netomatic.HTTPClient) error {
+			_, err := c.GetAgentRun(context.Background(), netomatic.GetAgentRunRequest{Run: "run"})
+			return err
+		},
+		"Complete": func(c *netomatic.HTTPClient) error {
+			_, err := c.Complete(context.Background(), netomatic.CompleteRequest{Project: "demo", Run: "run"})
+			return err
+		},
+		"ReviewApprovedBranches": func(c *netomatic.HTTPClient) error {
+			_, err := c.ReviewApprovedBranches(context.Background(), netomatic.ReviewApprovedBranchesRequest{Project: "demo"})
+			return err
+		},
+		"ReadDaemonLog": func(c *netomatic.HTTPClient) error { _, err := c.ReadDaemonLog(context.Background(), 0, 1); return err },
+	}
+
+	availableOperations := 0
+	for _, operation := range netomatic.ContractOperations() {
 		t.Run(operation.Name, func(t *testing.T) {
-			if !operation.Unavailable {
-				t.Skip("configured operations are covered by fake-use-case interoperability tests")
+			client := newHTTPInteroperabilityClient(t, operation.Name != "PrefixEpic")
+			if operation.Unavailable {
+				assertAPIError(t, callOperation(client, operation.Name), http.StatusNotImplemented, netomatic.ErrorFeatureNotConfigured)
+				return
 			}
-			err := callOperation(client, operation.Name)
-			var apiError *netomatic.APIError
-			if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != netomatic.ErrorFeatureNotConfigured {
-				t.Fatalf("%s() error = %#v, want feature_not_configured", operation.Name, err)
+			availableOperations++
+			call, ok := available[operation.Name]
+			if !ok {
+				t.Fatalf("available operation has no interoperability call")
+			}
+			if err := call(client); err != nil {
+				t.Fatalf("%s() error = %v", operation.Name, err)
 			}
 		})
+	}
+	if len(available) != availableOperations {
+		t.Fatalf("interoperability calls = %d, want one for every available operation", len(available))
 	}
 }
 
@@ -191,16 +369,20 @@ func TestHandlerClassifiesValidationFailuresAsBadRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, test := range []struct {
-		name string
-		path string
-		body string
+		name   string
+		method string
+		path   string
+		body   string
 	}{
-		{name: "project", path: "/projects", body: `{"name":""}`},
-		{name: "epic", path: "/projects/demo/epics", body: `{"project":"demo","title":""}`},
-		{name: "issue", path: "/projects/demo/epics/epic-1/issues", body: `{"project":"demo","epic":"epic-1","title":""}`},
+		{name: "project", method: http.MethodPost, path: "/projects", body: `{"name":""}`},
+		{name: "project syntax", method: http.MethodPost, path: "/projects", body: `{"name":"bad name"}`},
+		{name: "store model", method: http.MethodPost, path: "/projects/1/setup", body: `{"model":""}`},
+		{name: "epic", method: http.MethodPost, path: "/projects/demo/epics", body: `{"project":"demo","title":""}`},
+		{name: "issue", method: http.MethodPost, path: "/projects/demo/epics/epic-1/issues", body: `{"project":"demo","epic":"epic-1","title":""}`},
+		{name: "pull request status", method: http.MethodPost, path: "/projects/1/epics/epic-1/pull-requests/pr-1/state-transitions", body: `{"status":"merged"}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			request := httptest.NewRequest(http.MethodPost, netomatic.APIPrefix+test.path, strings.NewReader(test.body))
+			request := httptest.NewRequest(test.method, netomatic.APIPrefix+test.path, strings.NewReader(test.body))
 			request.Header.Set("Authorization", "Bearer token")
 			request.Header.Set("Content-Type", "application/json")
 			recorder := httptest.NewRecorder()
@@ -213,6 +395,59 @@ func TestHandlerClassifiesValidationFailuresAsBadRequests(t *testing.T) {
 				t.Fatalf("response = %d %#v", recorder.Code, response)
 			}
 		})
+	}
+}
+
+func TestHandlerDoesNotMutateWithoutResponseReader(t *testing.T) {
+	epic, err := epicpkg.CreateEpic("Epic", "octocat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := &httpTestWorkspace{epics: map[string]epicpkg.Epic{epic.ID: epic}}
+	registry := &httpTestRegistry{projects: []domain.Project{{ID: 1, Name: "demo"}}}
+	useCases := usecases.NewUseCases(registry, httpTestFactory{workspace: workspace}, httpTestClock{}, nil, nil)
+	useCases.GetEpic = nil
+	server, err := New(useCases, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, netomatic.APIPrefix+"/projects/demo/epics/"+epic.ID+"/prefix", strings.NewReader(`{"project":"demo","epic":"`+epic.ID+`","prefix":"work"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	recorder := httptest.NewRecorder()
+	server.Handler().ServeHTTP(recorder, request)
+
+	if recorder.Code != http.StatusNotImplemented {
+		t.Fatalf("status = %d, want %d", recorder.Code, http.StatusNotImplemented)
+	}
+	if workspace.epics[epic.ID].BranchPrefix != "" {
+		t.Fatalf("epic was mutated: %#v", workspace.epics[epic.ID])
+	}
+}
+
+func TestCapabilitiesExcludeUnavailableOperations(t *testing.T) {
+	useCases := usecases.NewUseCases(&httpTestRegistry{}, httpTestFactory{workspace: &httpTestWorkspace{}}, httpTestClock{}, nil, &usecases.EpicAgentDependencies{
+		Output: &httpTestRunOutput{}, Builder: httpTestCommandBuilder{},
+	})
+	server, err := New(useCases, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+	client, err := netomatic.NewHTTPClient(testServer.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	capabilities, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"runEpicAgent", "runIssueAgent", "reconcileSandboxes"} {
+		if capabilities[name] {
+			t.Fatalf("%s capability is advertised for an unavailable operation", name)
+		}
 	}
 }
 
@@ -430,6 +665,79 @@ func TestHandlerPagesDaemonLogAcrossOversizedRecordsAndResetOffsets(t *testing.T
 	}
 }
 
+func newHTTPInteroperabilityClient(t *testing.T, withPullRequest bool) *netomatic.HTTPClient {
+	t.Helper()
+	epic, err := epicpkg.CreateEpic("Epic", "octocat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	epic.ID = "epic"
+	epic.Issues[0].ID = "root"
+	epic.Repositories = []string{"acme/widgets"}
+	child, err := epicpkg.CreateRepositoryIssue("Child", "", "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	child.ID = "child"
+	if err := epic.AddIssue("root", child); err != nil {
+		t.Fatal(err)
+	}
+	if withPullRequest {
+		pullRequest, err := epicpkg.CreatePullRequest("child", "Pull request", "acme/widgets", "feature", "main")
+		if err != nil {
+			t.Fatal(err)
+		}
+		pullRequest.ID = "pr"
+		pullRequest.CodingRounds = epicpkg.MaxCodingRounds
+		pullRequest.Rounds = epicpkg.MaxCodingRounds
+		if err := epic.AddPullRequest("child", pullRequest); err != nil {
+			t.Fatal(err)
+		}
+		for index := range epic.Issues {
+			if epic.Issues[index].ID == "child" {
+				epic.Issues[index].State = epicpkg.IssueStatePR
+			}
+		}
+	}
+
+	workspace := &httpTestWorkspace{
+		repositories: []string{"acme/widgets"},
+		epics:        map[string]epicpkg.Epic{"epic": epic},
+		agentSettings: agent.AgentSettings{Roles: map[agent.AgentRole]agent.AgentProfile{
+			agent.AgentRoleRefiner: {Agent: "openai/gpt"},
+		}},
+	}
+	registry := &httpTestRegistry{
+		projects: []domain.Project{{ID: 1, Name: "demo"}},
+		agentRuns: map[string]agent.AgentRun{
+			"run": {ID: "run", ProjectID: 1, Subject: agent.AgentSubject{Kind: agent.AgentSubjectEpic, ID: "epic"}},
+		},
+	}
+	useCases := usecases.NewUseCases(registry, httpTestFactory{workspace: workspace}, httpTestClock{}, httpTestGitHub{}, &usecases.EpicAgentDependencies{
+		Sandboxes: httpTestSandbox{},
+		Code:      httpTestCode{},
+		Differ:    httpTestCode{},
+		Output:    &httpTestRunOutput{sizes: map[string]int64{"run": 1}},
+		Builder:   httpTestCommandBuilder{},
+	})
+	useCases.CurrentUser = "octocat"
+	logFile := t.TempDir() + "/donsy.log"
+	if err := os.WriteFile(logFile, []byte("entry\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	server, err := NewWithDaemonLog(useCases, nil, logFile, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testServer := httptest.NewServer(server.Handler())
+	t.Cleanup(testServer.Close)
+	client, err := netomatic.NewHTTPClient(testServer.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return client
+}
+
 type httpTestClock struct{}
 
 func (httpTestClock) Now() time.Time { return time.Unix(0, 0) }
@@ -437,6 +745,22 @@ func (httpTestClock) Now() time.Time { return time.Unix(0, 0) }
 type httpTestFactory struct{ workspace application.Workspace }
 
 func (f httpTestFactory) Open(string) application.Workspace { return f.workspace }
+
+type httpTestGitHub struct{}
+
+func (httpTestGitHub) CheckAuth(context.Context) error { return nil }
+func (httpTestGitHub) CurrentUser(context.Context) (string, error) {
+	return "octocat", nil
+}
+func (httpTestGitHub) ListOrganisations(context.Context) ([]domain.Organisation, error) {
+	return nil, nil
+}
+func (httpTestGitHub) ListRepositories(context.Context, string) ([]application.GitHubRepository, error) {
+	return nil, nil
+}
+func (httpTestGitHub) ListUserRepositories(context.Context) ([]application.GitHubRepository, error) {
+	return nil, nil
+}
 
 type httpTestWorkspace struct {
 	repositories  []string
@@ -554,3 +878,45 @@ func (httpTestCommandBuilder) ParseTranscript(value string) []agent.TranscriptEn
 }
 func (httpTestCommandBuilder) ParseUsage(string) agent.RunUsage { return agent.RunUsage{} }
 func (httpTestCommandBuilder) ReviewApproved(string) bool       { return false }
+
+type httpTestSandbox struct{}
+
+func (httpTestSandbox) Ensure(context.Context, agent_runtime.SandboxSpec) (bool, error) {
+	return false, nil
+}
+func (httpTestSandbox) Start(context.Context, agent.SandboxRef) error   { return nil }
+func (httpTestSandbox) Stop(context.Context, agent.SandboxRef) error    { return nil }
+func (httpTestSandbox) StopNow(context.Context, agent.SandboxRef) error { return nil }
+func (httpTestSandbox) Delete(context.Context, agent.SandboxRef) error  { return nil }
+func (httpTestSandbox) Reserve(context.Context, agent_runtime.SandboxSpec) (func(), bool, error) {
+	return func() {}, true, nil
+}
+
+type httpTestCode struct{}
+
+func (httpTestCode) DefaultBranch(context.Context, string) (string, error) { return "main", nil }
+func (httpTestCode) PurgeEpic(string) error                                { return nil }
+func (httpTestCode) Checkout(context.Context, agent_runtime.CodeCheckout, string, string) (string, error) {
+	return "/checkout", nil
+}
+func (httpTestCode) Resolve(agent_runtime.CodeCheckout, string) (string, error) { return "head", nil }
+func (httpTestCode) CommitAll(agent_runtime.CodeCheckout, string) (string, error) {
+	return "head", nil
+}
+func (httpTestCode) CommitsSince(agent_runtime.CodeCheckout, string) ([]agent_runtime.CommitInfo, error) {
+	return nil, nil
+}
+func (httpTestCode) DescendsFrom(agent_runtime.CodeCheckout, string) (bool, error)  { return true, nil }
+func (httpTestCode) Push(context.Context, agent_runtime.CodeCheckout, string) error { return nil }
+func (httpTestCode) DeleteBranch(context.Context, agent_runtime.CodeCheckout, string) error {
+	return nil
+}
+func (httpTestCode) Merge(context.Context, agent_runtime.CodeCheckout, string, string) error {
+	return nil
+}
+func (httpTestCode) InspectBranches(context.Context, string, string, string, []string) (map[string]agent_runtime.BranchState, error) {
+	return map[string]agent_runtime.BranchState{}, nil
+}
+func (httpTestCode) Diff(context.Context, string, string, string, string) (string, error) {
+	return "diff", nil
+}

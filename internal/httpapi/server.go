@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -22,6 +23,8 @@ import (
 )
 
 const Address = "127.0.0.1:8337"
+
+var projectNamePattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 type Server struct {
 	useCases      *usecases.UseCases
@@ -182,8 +185,8 @@ func (s *Server) projectName(r *http.Request) (domain.Project, error) {
 }
 
 func (s *Server) projectNameValue(name string) (domain.Project, error) {
-	if strings.TrimSpace(name) == "" {
-		return domain.Project{}, errInvalidRequest("project is required")
+	if !validProjectName(name) {
+		return domain.Project{}, errInvalidRequest("project name must contain only letters, numbers, and dashes")
 	}
 	return s.findProject(func(project domain.Project) bool { return project.Name == name })
 }
@@ -262,6 +265,10 @@ type resourceNotFound string
 
 func (e resourceNotFound) Error() string { return string(e) + " was not found" }
 func errNotFound(resource string) error  { return resourceNotFound(resource) }
+
+func validProjectName(name string) bool {
+	return projectNamePattern.MatchString(strings.TrimSpace(name))
+}
 
 func (s *Server) unavailable(feature string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {
