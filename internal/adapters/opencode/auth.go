@@ -48,13 +48,19 @@ func (c Credentials) Discard(sandboxName string) error {
 	if sandboxName == "" {
 		return fmt.Errorf("sandbox name is required to discard its credentials")
 	}
-	if strings.ContainsAny(sandboxName, `/\`) || strings.Contains(sandboxName, "..") {
-		return fmt.Errorf("sandbox name %q is not a bare directory name", sandboxName)
+	if err := validateSandboxName(sandboxName); err != nil {
+		return err
 	}
 	return os.RemoveAll(filepath.Join(c.root, sandboxName))
 }
 
 func (c Credentials) OpenCodeMount(sandboxName, model string) (agent_runtime.SandboxMount, error) {
+	if sandboxName == "" {
+		return agent_runtime.SandboxMount{}, fmt.Errorf("sandbox name is required to stage credentials")
+	}
+	if err := validateSandboxName(sandboxName); err != nil {
+		return agent_runtime.SandboxMount{}, err
+	}
 	contents, err := os.ReadFile(c.authPath)
 	if err != nil {
 		return agent_runtime.SandboxMount{}, fmt.Errorf("read OpenCode auth file: %w", err)
@@ -74,6 +80,13 @@ func (c Credentials) OpenCodeMount(sandboxName, model string) (agent_runtime.San
 	return agent_runtime.SandboxMount{
 		HostLocation: directory, GuestLocation: guestCredentialsPath,
 	}, nil
+}
+
+func validateSandboxName(sandboxName string) error {
+	if strings.ContainsAny(sandboxName, `/\`) || strings.Contains(sandboxName, "..") {
+		return fmt.Errorf("sandbox name %q is not a bare directory name", sandboxName)
+	}
+	return nil
 }
 
 // scopeToProvider reduces the host auth store to the one entry the run's model

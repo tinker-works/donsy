@@ -37,6 +37,24 @@ func TestCredentials_OpenCodeMount_ShouldRejectMissingAuthFile(t *testing.T) {
 	}
 }
 
+func TestCredentials_OpenCodeMount_ShouldRejectANameThatEscapesTheRoot(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	authPath := writeAuthFile(t, root, `{"anthropic":{"type":"api","key":"secret"}}`)
+	credentials := Credentials{root: filepath.Join(root, "guest"), authPath: authPath}
+
+	// Act
+	_, err := credentials.OpenCodeMount("../elsewhere", testModel)
+
+	// Assert
+	if err == nil {
+		t.Fatal("expected a path-like sandbox name to be rejected")
+	}
+	if _, err := os.Stat(filepath.Join(root, "elsewhere")); !os.IsNotExist(err) {
+		t.Fatalf("expected credentials not to be staged outside the root: %v", err)
+	}
+}
+
 func TestCredentials_OpenCodeMount_ShouldScopeMountPerSandbox(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
