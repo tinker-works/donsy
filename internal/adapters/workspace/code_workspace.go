@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"time"
 
 	git "github.com/go-git/go-git/v5"
@@ -16,6 +15,7 @@ import (
 	"github.com/go-git/go-git/v5/storage/memory"
 
 	"github.com/tinker-works/donsy/internal/application/agent_runtime"
+	"github.com/tinker-works/donsy/internal/repositorypath"
 )
 
 // CodeWorkspace maintains one writable clone per issue. A coding round is the
@@ -55,7 +55,7 @@ func (w CodeWorkspace) path(checkout agent_runtime.CodeCheckout) (string, error)
 	}
 	return filepath.Join(
 		w.root, checkout.EpicID, "issues", checkout.IssueID,
-		strings.ReplaceAll(checkout.Repository, "/", "__"),
+		repositorypath.Encode(checkout.Repository),
 	), nil
 }
 
@@ -73,7 +73,7 @@ func (w CodeWorkspace) repositoryPath(epicID, repository string) (string, error)
 	if !repositoryNameValid(repository) {
 		return "", fmt.Errorf("repository must use owner/name form, got %q", repository)
 	}
-	return filepath.Join(w.root, epicID, "repo", strings.ReplaceAll(repository, "/", "__")), nil
+	return filepath.Join(w.root, epicID, "repo", repositorypath.Encode(repository)), nil
 }
 
 // PurgeEpic removes every checkout cut under one epic. A coding round commits and

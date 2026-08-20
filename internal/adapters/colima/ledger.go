@@ -121,7 +121,10 @@ func (c *Client) recordedNames(profile string) (map[string]struct{}, error) {
 			continue
 		}
 		held, exists, err := c.readRecord(name)
-		if err != nil || !exists || held.Profile != profile {
+		if err != nil {
+			return nil, fmt.Errorf("read sandbox record %q: %w", name, err)
+		}
+		if !exists || held.Profile != profile {
 			continue
 		}
 		names[name] = struct{}{}

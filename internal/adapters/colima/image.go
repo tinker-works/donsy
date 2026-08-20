@@ -65,6 +65,8 @@ func (c *Client) ensureImage(
 	tag := imageTag(spec)
 	if err := c.docker(ctx, profile, listTimeout, "image", "inspect", tag); err == nil {
 		return tag, nil
+	} else if !isNoSuchImage(err) {
+		return "", fmt.Errorf("inspect agent image %q: %w", tag, err)
 	}
 	// Pruning happens before the build rather than after, so it can never meet
 	// the image it is about to produce.

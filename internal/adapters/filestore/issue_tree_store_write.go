@@ -8,6 +8,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tinker-works/donsy/internal/repositorypath"
 	"gopkg.in/yaml.v3"
 )
 
@@ -71,7 +72,7 @@ func treePaths(root epicpkg.Issue, children map[string][]epicpkg.Issue) map[stri
 		}
 		folder := parentDir
 		if folder == "" {
-			folder = strings.ReplaceAll(issue.Repository, "/", "__")
+			folder = repositorypath.Encode(issue.Repository)
 		}
 		if folder == "" {
 			return
@@ -124,7 +125,7 @@ func writeBranch(
 	}
 	folder := parentDir
 	if folder == "" {
-		folder = strings.ReplaceAll(issue.Repository, "/", "__")
+		folder = repositorypath.Encode(issue.Repository)
 	}
 	if folder == "" {
 		return fmt.Errorf("issue %q has no repository", issue.ID)

@@ -268,6 +268,7 @@ func TestReviewApproved_ShouldRequireVerdictOnItsOwnLine(t *testing.T) {
 		{name: "request changes", answer: "notes\nVERDICT: request-changes", want: false},
 		{name: "no verdict", answer: "looks good to me", want: false},
 		{name: "last line wins", answer: "VERDICT: request-changes\nVERDICT: approve", want: true},
+		{name: "final request changes wins", answer: "VERDICT: approve\nVERDICT: request-changes", want: false},
 		{name: "surrounding whitespace", answer: "  VERDICT: approve  ", want: true},
 	}
 

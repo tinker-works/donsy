@@ -217,6 +217,8 @@ func (c *Client) ensureSessionVolume(
 	volume := sessionVolume(name)
 	if err := c.docker(ctx, profile, listTimeout, "volume", "inspect", volume); err == nil {
 		return false, nil
+	} else if !isNoSuchVolume(err) {
+		return false, fmt.Errorf("inspect session volume %q: %w", volume, err)
 	}
 	return true, c.docker(ctx, profile, createTimeout, "volume", "create", volume)
 }
@@ -394,6 +396,18 @@ func isNoSuchContainer(err error, output []byte) bool {
 	text := strings.ToLower(err.Error() + " " + string(output))
 	return strings.Contains(text, "no such object") ||
 		strings.Contains(text, "no such container")
+}
+
+func isNoSuchImage(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "no such object") ||
+		strings.Contains(text, "no such image")
+}
+
+func isNoSuchVolume(err error) bool {
+	text := strings.ToLower(err.Error())
+	return strings.Contains(text, "no such object") ||
+		strings.Contains(text, "no such volume")
 }
 
 func (c *Client) fingerprintMatches(

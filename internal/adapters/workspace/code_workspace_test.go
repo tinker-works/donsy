@@ -200,6 +200,17 @@ func replaceGitMetadata(t *testing.T, path, target string) {
 	}
 }
 
+func replaceGitMetadataEntry(t *testing.T, path, name, target string) {
+	t.Helper()
+	metadata := filepath.Join(path, ".git", name)
+	if err := os.Remove(metadata); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(target, metadata); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCodeWorkspace_DefaultBranch_ShouldReadTheRemoteHead(t *testing.T) {
 	// Arrange
 	workspace, _, _ := localCodeWorkspace(t)
@@ -213,6 +224,32 @@ func TestCodeWorkspace_DefaultBranch_ShouldReadTheRemoteHead(t *testing.T) {
 	}
 	if branch != "master" {
 		t.Fatalf("expected master, got %q", branch)
+	}
+}
+
+func TestCodeWorkspace_ShouldUseDistinctPathsForAmbiguousRepositoryNames(t *testing.T) {
+	// Arrange
+	workspace, _, checkout := localCodeWorkspace(t)
+	other := checkout
+	other.Repository = "acme__foo/bar"
+	checkout.Repository = "acme/foo__bar"
+
+	// Act
+	path, err := workspace.path(checkout)
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherPath, err := workspace.path(other)
+
+	// Assert
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path == otherPath {
+		t.Fatalf("repository paths collided: %q", path)
+	}
+	if filepath.Base(path) != "acme__foo_u_ubar" {
+		t.Fatalf("unexpected encoded repository path %q", path)
 	}
 }
 
@@ -312,6 +349,29 @@ func TestCodeWorkspace_Checkout_ShouldRejectGitMetadataRedirectedByTheSandbox(t 
 	// Assert
 	if err == nil || !strings.Contains(err.Error(), "unsafe .git metadata") {
 		t.Fatalf("expected redirected Git metadata to be rejected, got %v", err)
+	}
+}
+
+func TestCodeWorkspace_CommitAll_ShouldRejectSymlinkedGitMetadata(t *testing.T) {
+	// Arrange: an agent can replace a nested Git metadata file in a writable
+	// checkout, but host-side staging must not follow it outside the checkout.
+	workspace, _, checkout := localCodeWorkspace(t)
+	path, err := workspace.Checkout(context.Background(), checkout, "go-merge/issue-1", "master")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "index")
+	if err := os.WriteFile(target, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	replaceGitMetadataEntry(t, path, "index", target)
+
+	// Act
+	_, err = workspace.CommitAll(checkout, "ai: round 1")
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), "unsafe .git metadata") {
+		t.Fatalf("expected symlinked Git metadata to be rejected, got %v", err)
 	}
 }
 

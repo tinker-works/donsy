@@ -40,7 +40,9 @@ func stubLimactl(t *testing.T, instances ...string) string {
 func TestRetireLima_ShouldDeleteOnlyTheAgentInstances(t *testing.T) {
 	// Arrange
 	root := t.TempDir()
-	log := stubLimactl(t, "gm-3-issue-coding", "gm-dev", "my-own-vm", "gm-3-epic-refiner")
+	log := stubLimactl(t,
+		"gm-3-issue-coding-0123abcd", "gm-dev", "my-own-vm",
+		"gm-3-epic-refiner-abcdef12")
 
 	// Act
 	RetireLima(context.Background(), root)
@@ -51,7 +53,7 @@ func TestRetireLima_ShouldDeleteOnlyTheAgentInstances(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := string(contents)
-	for _, ours := range []string{"gm-3-issue-coding", "gm-3-epic-refiner"} {
+	for _, ours := range []string{"gm-3-issue-coding-0123abcd", "gm-3-epic-refiner-abcdef12"} {
 		if !strings.Contains(calls, "delete --force "+ours) {
 			t.Fatalf("expected %q deleted:\n%s", ours, calls)
 		}

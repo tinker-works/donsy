@@ -107,21 +107,20 @@ func deleteLimaInstances(ctx context.Context) error {
 }
 
 // legacyInstanceName matches the names minted by the Lima sandbox adapter:
-// gm-<project>-<subject>-<role>, with an optional identity digest used by later
-// layouts. A prefix alone is not ownership proof: users commonly have their own
-// gm-* Lima instances.
+// gm-<project>-<subject>-<role>-<identity digest>. A prefix alone is not
+// ownership proof: users commonly have their own gm-* Lima instances.
 func legacyInstanceName(name string) bool {
 	if !strings.HasPrefix(name, retiredInstancePrefix) {
 		return false
 	}
 	parts := strings.Split(strings.TrimPrefix(name, retiredInstancePrefix), "-")
-	if len(parts) < 3 || !decimal(parts[0]) {
+	if len(parts) < 4 || !decimal(parts[0]) {
 		return false
 	}
-	parts = parts[1:]
-	if len(parts) > 1 && len(parts[len(parts)-1]) == 8 && hexadecimal(parts[len(parts)-1]) {
-		parts = parts[:len(parts)-1]
+	if len(parts[len(parts)-1]) != 8 || !hexadecimal(parts[len(parts)-1]) {
+		return false
 	}
+	parts = parts[1 : len(parts)-1]
 	for _, role := range []string{"refiner", "issue-reviewer", "coding", "pr-reviewer", "merge"} {
 		roleParts := strings.Split(role, "-")
 		if len(parts) <= len(roleParts) || !sameParts(parts[len(parts)-len(roleParts):], roleParts) {

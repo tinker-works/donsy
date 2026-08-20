@@ -8,11 +8,11 @@ import (
 	"github.com/tinker-works/donsy/internal/application/agent_runtime"
 	"github.com/tinker-works/donsy/internal/domain/agent"
 	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
-	"strings"
 	"time"
 
 	"github.com/tinker-works/donsy/internal/application/prompts"
 	"github.com/tinker-works/donsy/internal/domain"
+	"github.com/tinker-works/donsy/internal/repositorypath"
 )
 
 // DefaultMaxRounds caps a role whose profile never configured a limit. Zero
@@ -153,7 +153,7 @@ func (u *RunEpicAgentUseCase) Handle(ctx context.Context, command RunEpicAgentCo
 		if err != nil {
 			return err
 		}
-		folder := strings.ReplaceAll(repository, "/", "__")
+		folder := repositorypath.Encode(repository)
 		command.Spec.Mounts = append(command.Spec.Mounts, agent_runtime.SandboxMount{
 			// Test commands write build outputs and test databases beside source.
 			// AgentWorkspace resets this disposable checkout before the next round.
@@ -232,7 +232,7 @@ func (u *RunEpicAgentUseCase) round() agentRound {
 func withRepositoryFolders(epic epicpkg.Epic) epicpkg.Epic {
 	epics := append([]string(nil), epic.Repositories...)
 	for index, repository := range epics {
-		epics[index] = strings.ReplaceAll(repository, "/", "__")
+		epics[index] = repositorypath.Encode(repository)
 	}
 	epic.Repositories = epics
 	return epic

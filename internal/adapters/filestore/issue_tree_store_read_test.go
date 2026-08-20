@@ -37,6 +37,38 @@ func TestIssueTreeReader_Read_ShouldPreserveNestedTree(t *testing.T) {
 	}
 }
 
+func TestIssueTreeStore_ShouldRoundTripARepositoryContainingEncodingMarkers(t *testing.T) {
+	// Arrange
+	detail := treeEpic(t)
+	detail.Repositories = []string{"acme/foo__bar"}
+	for index := range detail.Issues {
+		if detail.Issues[index].ParentID != "" {
+			detail.Issues[index].Repository = "acme/foo__bar"
+		}
+	}
+	store := NewIssueTreeStore(t.TempDir())
+	path, err := store.Write("gm-sandbox", detail)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Act
+	reloaded, err := store.Read(path, detail)
+
+	// Assert
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "acme__foo_u_ubar", "child.md")); err != nil {
+		t.Fatalf("expected the bijective repository directory: %v", err)
+	}
+	for _, issue := range reloaded.Issues {
+		if issue.ParentID != "" && issue.Repository != "acme/foo__bar" {
+			t.Fatalf("repository did not round-trip: %#v", issue)
+		}
+	}
+}
+
 // Nesting is how the refiner says "this lands first": a prerequisite goes under
 // the issue that integrates it, and Epic.Blocked holds the parent's pull request
 // until the child merges. The refiner writes those files from scratch, with slug

@@ -2,6 +2,7 @@ package colima
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"testing"
@@ -106,6 +107,25 @@ func TestClient_EnsureImage_ShouldBuildAndLabelAMissingImage(t *testing.T) {
 	}
 	if prune < 0 || build < 0 || prune > build {
 		t.Fatalf("expected the prune before the build:\n%s", strings.Join(lines, "\n"))
+	}
+}
+
+func TestClient_EnsureImage_ShouldPropagateANonNotFoundInspectError(t *testing.T) {
+	// Arrange
+	runner := newFakeRunner()
+	client := clientWith(t, runner)
+	runner.answer("docker --host "+dockerHost("gm-7")+" image inspect",
+		response{err: fmt.Errorf("permission denied")})
+
+	// Act
+	_, err := client.ensureImage(context.Background(), "gm-7", testSpec(t))
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected the inspect error to be propagated, got %v", err)
+	}
+	if runner.ran("build") {
+		t.Fatalf("expected no image build after an inspect failure: %v", runner.lines())
 	}
 }
 

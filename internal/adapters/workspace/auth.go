@@ -2,6 +2,7 @@ package workspace
 
 import (
 	"fmt"
+	"io/fs"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -45,6 +46,20 @@ func validateCheckout(path string) error {
 	}
 	if metadata.Mode()&os.ModeSymlink != 0 || !metadata.IsDir() {
 		return fmt.Errorf("checkout %q has unsafe .git metadata", path)
+	}
+	if err := filepath.WalkDir(filepath.Join(path, ".git"), func(
+		metadataPath string, entry fs.DirEntry, err error,
+	) error {
+		if err != nil {
+			return err
+		}
+		if entry.Type()&os.ModeSymlink != 0 {
+			return fmt.Errorf("checkout %q has unsafe .git metadata at %q",
+				path, metadataPath)
+		}
+		return nil
+	}); err != nil {
+		return err
 	}
 	return nil
 }

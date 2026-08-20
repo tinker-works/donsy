@@ -95,6 +95,25 @@ func TestClient_Ensure_ShouldCreateTheContainerAgainstItsProjectsProfile(t *test
 	}
 }
 
+func TestClient_EnsureSessionVolume_ShouldPropagateANonNotFoundInspectError(t *testing.T) {
+	// Arrange
+	runner := newFakeRunner()
+	client := clientWith(t, runner)
+	runner.answer("docker --host "+dockerHost("gm-7")+" volume inspect",
+		response{err: fmt.Errorf("permission denied")})
+
+	// Act
+	_, err := client.ensureSessionVolume(context.Background(), "gm-7", "gm-7-issue-coding")
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected the inspect error to be propagated, got %v", err)
+	}
+	if runner.ran("volume", "create") {
+		t.Fatalf("expected no volume creation after an inspect failure: %v", runner.lines())
+	}
+}
+
 func TestCreateArgs_ShouldLimitMemoryWithoutLimitingCPU(t *testing.T) {
 	// Arrange
 	args := createArgs(testSpec(t), "image")

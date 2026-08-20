@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/tinker-works/donsy/internal/repositorypath"
 	"gopkg.in/yaml.v3"
 )
 
@@ -128,7 +129,11 @@ func (r *issueTreeReader) readRepositories(root, parentID string) error {
 		if !entry.IsDir() {
 			continue
 		}
-		repository := strings.ReplaceAll(entry.Name(), "__", "/")
+		repository, err := repositorypath.Decode(entry.Name())
+		if err != nil {
+			return fmt.Errorf("issue tree has invalid repository directory %q: %w",
+				entry.Name(), err)
+		}
 		if !contains(r.previous.Repositories, repository) {
 			return fmt.Errorf("issue tree names unscoped repository %q", repository)
 		}

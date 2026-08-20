@@ -13,6 +13,7 @@ import (
 	"github.com/tinker-works/donsy/internal/domain"
 	"github.com/tinker-works/donsy/internal/domain/agent"
 	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
+	"github.com/tinker-works/donsy/internal/repositorypath"
 )
 
 type RunIssueAgentCommand struct {
@@ -235,7 +236,7 @@ func (u *RunIssueAgentUseCase) mount(
 		}
 		spec.Mounts = append(spec.Mounts, agent_runtime.SandboxMount{
 			HostLocation:  path,
-			GuestLocation: "/work/repos/" + strings.ReplaceAll(repository, "/", "__"),
+			GuestLocation: "/work/repos/" + repositorypath.Encode(repository),
 		})
 	}
 	return nil
@@ -423,11 +424,11 @@ func issueContext(
 		if repository == pullRequest.Repository {
 			continue
 		}
-		references = append(references, strings.ReplaceAll(repository, "/", "__"))
+		references = append(references, repositorypath.Encode(repository))
 	}
 	return prompts.IssueContext{
 		IssuePath: fmt.Sprintf(
-			"/work/issues/%s/%s.md", strings.ReplaceAll(issue.Repository, "/", "__"), issue.ID,
+			"/work/issues/%s/%s.md", repositorypath.Encode(issue.Repository), issue.ID,
 		),
 		IssueTitle:   issue.Title,
 		RepoDir:      "/work/repo",

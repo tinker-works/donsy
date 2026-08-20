@@ -106,11 +106,14 @@ func agentText(output string) string {
 }
 
 func (Builder) ReviewApproved(answer string) bool {
-	lines := strings.Split(answer, "\n")
-	for index := len(lines) - 1; index >= 0; index-- {
-		if strings.EqualFold(strings.TrimSpace(lines[index]), "VERDICT: approve") {
-			return true
+	approved := false
+	for _, line := range strings.Split(answer, "\n") {
+		switch {
+		case strings.EqualFold(strings.TrimSpace(line), "VERDICT: approve"):
+			approved = true
+		case strings.EqualFold(strings.TrimSpace(line), "VERDICT: request-changes"):
+			approved = false
 		}
 	}
-	return false
+	return approved
 }

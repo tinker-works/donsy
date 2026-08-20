@@ -130,6 +130,33 @@ func TestClient_RecordedNames_ShouldAcceptAStateDirectoryThatIsNotThereYet(t *te
 	}
 }
 
+func TestClient_PruneOrphanContainers_ShouldAbortOnAMalformedRecord(t *testing.T) {
+	// Arrange: pruning an unparseable ledger would delete a container whose
+	// ownership this process can no longer establish.
+	runner := newFakeRunner()
+	client := clientWith(t, runner)
+	runner.answer("docker --host "+dockerHost("gm-7")+" ps --all",
+		response{output: "gm-7-protected\n"})
+	if err := os.MkdirAll(client.stateDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(client.stateDir, "gm-7-protected.json"),
+		[]byte("not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// Act
+	err := client.pruneOrphanContainers(context.Background(), "gm-7")
+
+	// Assert
+	if err == nil {
+		t.Fatal("expected the malformed record to abort pruning")
+	}
+	if runner.ran("rm", "--force", "--volumes") {
+		t.Fatalf("expected no container deletion after a ledger error: %v", runner.lines())
+	}
+}
+
 func TestRetireLima_ShouldRunOnceAndSurviveAHostWithoutLimactl(t *testing.T) {
 	// Arrange: no limactl on PATH, and a directory the previous runtime left.
 	root := t.TempDir()

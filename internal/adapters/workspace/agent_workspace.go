@@ -14,6 +14,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
+	"github.com/tinker-works/donsy/internal/repositorypath"
 )
 
 // AgentWorkspace maintains host-side clones that are mounted read-only into agent sandboxes.
@@ -70,7 +71,7 @@ func (w AgentWorkspace) Ensure(ctx context.Context, epicID, repository string) (
 func (w AgentWorkspace) ensureLocked(
 	ctx context.Context, epicID, repository string,
 ) (string, error) {
-	path := filepath.Join(w.root, epicID, "repos", strings.ReplaceAll(repository, "/", "__"))
+	path := filepath.Join(w.root, epicID, "repos", repositorypath.Encode(repository))
 	if _, err := os.Stat(path); os.IsNotExist(err) {
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			return "", err
