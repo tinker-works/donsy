@@ -126,14 +126,6 @@ func contractFixtureJSON(fixture any) ([]byte, error) {
 	return json.Marshal(fixture)
 }
 
-func contractObjectFixture(value any, field, object string) contractFixture {
-	return contractFixture{value: value, json: `{"` + field + `":` + object + `}`}
-}
-
-func contractListFixture(value any, field, object string) contractFixture {
-	return contractFixture{value: value, json: `{"` + field + `":[` + object + `]}`}
-}
-
 const (
 	commentFixtureJSON     = `{"ID":"comment-1","Author":"reviewer","CreatedAt":"2026-08-19T12:01:00Z","Body":"Please review"}`
 	issueFixtureJSON       = `{"ID":"issue-1","Title":"First issue","ParentID":"parent-1","Repository":"origin","State":"Coding","CreatedAt":"2026-08-19T12:00:00Z","Body":"Implement it","Comments":[` + commentFixtureJSON + `],"BlockedBy":["issue-0"]}`
