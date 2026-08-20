@@ -263,6 +263,14 @@ func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
 	if err != nil || len(activity.Activity) != 1 || activity.Activity[0].Size != 42 {
 		t.Fatalf("activity = %#v, error = %v", activity, err)
 	}
+	gotRun, err := client.GetAgentRun(context.Background(), netomatic.GetAgentRunRequest{Run: "run-1"})
+	if err != nil || gotRun.Run.Project != "demo" {
+		t.Fatalf("agent run = %#v, error = %v", gotRun, err)
+	}
+	cancelled, err := client.CancelAgentRun(context.Background(), netomatic.CancelAgentRunRequest{Run: "run-1"})
+	if err != nil || cancelled.Run.Project != "demo" {
+		t.Fatalf("cancelled run = %#v, error = %v", cancelled, err)
+	}
 	page, err := client.RunOutput(context.Background(), netomatic.RunOutputRequest{Run: "run-1", Offset: 8})
 	if err != nil || page.Output.Output != "next\n" || page.Output.Next != 13 || !reflect.DeepEqual(output.asked, []int64{8}) {
 		t.Fatalf("page = %#v, output offsets = %v, error = %v", page, output.asked, err)
@@ -277,6 +285,44 @@ func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
 	review, err := client.ReviewApprovedBranches(context.Background(), netomatic.ReviewApprovedBranchesRequest{Project: "demo"})
 	if err != nil || !reflect.DeepEqual(review.Branches, []string{"feature/one"}) {
 		t.Fatalf("review = %#v, error = %v", review, err)
+	}
+}
+
+func TestHandlerClassifiesDomainFailures(t *testing.T) {
+	epic, err := epicpkg.CreateEpic("Epic", "octocat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	workspace := &httpTestWorkspace{epics: map[string]epicpkg.Epic{epic.ID: epic}}
+	registry := &httpTestRegistry{projects: []domain.Project{{ID: 1, Name: "demo"}}}
+	useCases := usecases.NewUseCases(registry, httpTestFactory{workspace: workspace}, httpTestClock{}, nil, nil)
+	server, err := New(useCases, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+	client, err := netomatic.NewHTTPClient(testServer.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.TransitionEpic(context.Background(), netomatic.TransitionEpicRequest{
+		Project: "demo", Epic: epic.ID, Status: string(epicpkg.EpicStateDone),
+	})
+	assertAPIError(t, err, http.StatusBadRequest, netomatic.ErrorInvalidRequest)
+
+	_, err = client.GetIssue(context.Background(), netomatic.GetIssueRequest{
+		Project: "demo", Epic: epic.ID, Issue: "missing",
+	})
+	assertAPIError(t, err, http.StatusNotFound, netomatic.ErrorNotFound)
+}
+
+func assertAPIError(t *testing.T, err error, status int, code netomatic.ErrorCode) {
+	t.Helper()
+	var response *netomatic.APIError
+	if !errors.As(err, &response) || response.StatusCode != status || response.Code != code {
+		t.Fatalf("error = %#v, want HTTP %d %s", err, status, code)
 	}
 }
 

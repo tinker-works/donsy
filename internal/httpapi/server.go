@@ -17,6 +17,7 @@ import (
 
 	"github.com/tinker-works/donsy/internal/application/usecases"
 	"github.com/tinker-works/donsy/internal/domain"
+	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
 	"github.com/tinker-works/donsy/netomatic"
 )
 
@@ -233,6 +234,14 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 	}
 	if errors.Is(err, os.ErrNotExist) {
 		s.writeError(w, http.StatusNotFound, netomatic.ErrorNotFound, err.Error())
+		return
+	}
+	if errors.Is(err, epicpkg.ErrIssueNotFound) {
+		s.writeError(w, http.StatusNotFound, netomatic.ErrorNotFound, err.Error())
+		return
+	}
+	if errors.Is(err, epicpkg.ErrInvalidEpicTransition) {
+		s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, err.Error())
 		return
 	}
 	s.logger.Error("HTTP API request failed", "error", err)

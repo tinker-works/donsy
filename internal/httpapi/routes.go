@@ -737,7 +737,12 @@ func (s *Server) getAgentRun(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, netomatic.GetAgentRunResponse{Run: agentRunResponse(run, "")})
+	project, err := s.projectForRun(run)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, netomatic.GetAgentRunResponse{Run: agentRunResponse(run, project.Name)})
 }
 
 func (s *Server) cancelAgentRun(w http.ResponseWriter, r *http.Request) {
@@ -755,7 +760,16 @@ func (s *Server) cancelAgentRun(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	s.writeJSON(w, http.StatusOK, netomatic.CancelAgentRunResponse{Run: agentRunResponse(run, "")})
+	project, err := s.projectForRun(run)
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, netomatic.CancelAgentRunResponse{Run: agentRunResponse(run, project.Name)})
+}
+
+func (s *Server) projectForRun(run agent.AgentRun) (domain.Project, error) {
+	return s.findProject(func(project domain.Project) bool { return project.ID == run.ProjectID })
 }
 
 func (s *Server) listSandboxes(w http.ResponseWriter, _ *http.Request) {

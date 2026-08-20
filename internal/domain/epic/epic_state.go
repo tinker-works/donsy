@@ -1,6 +1,11 @@
 package epic
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
+
+var ErrInvalidEpicTransition = errors.New("invalid epic transition")
 
 type EpicState string
 
@@ -91,7 +96,7 @@ func (e *Epic) TransitionTo(next EpicState) error {
 
 	event, ok := epicEventForTransition(e.State, next)
 	if !ok {
-		return fmt.Errorf("cannot transition epic from %q to %q", e.State, next)
+		return fmt.Errorf("%w: cannot transition epic from %q to %q", ErrInvalidEpicTransition, e.State, next)
 	}
 	return e.Apply(event)
 }
