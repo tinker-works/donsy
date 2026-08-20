@@ -694,8 +694,9 @@ func (s *Server) getAgentSettings(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
-	response := netomatic.GetAgentSettingsResponse{Settings: make([]netomatic.AgentSettings, 0, len(settings.Roles))}
-	for role, profile := range settings.Roles {
+	response := netomatic.GetAgentSettingsResponse{Settings: make([]netomatic.AgentSettings, 0, len(agent.Roles()))}
+	for _, role := range agent.Roles() {
+		profile := settings.Roles[role]
 		response.Settings = append(response.Settings, netomatic.AgentSettings{Agent: profile.Agent, Variant: profile.Variant, Values: map[string]string{"role": string(role), "maxRounds": strconv.Itoa(profile.MaxRounds)}})
 	}
 	s.writeJSON(w, http.StatusOK, response)
@@ -786,11 +787,14 @@ func (s *Server) agentActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	size, ok := s.useCases.ReadRunOutput.Sizes([]string{runID})[runID]
-	response := netomatic.AgentActivityResponse{Activity: make([]netomatic.AgentActivity, 0, 1)}
-	if ok {
-		response.Activity = append(response.Activity, netomatic.AgentActivity{
+	response := netomatic.AgentActivityResponse{}
+	if ok && size > 0 {
+		// Goggles records the sample as len(Activity), so retain one element per
+		// transcript byte while placing the descriptive value on the first item.
+		response.Activity = make([]netomatic.AgentActivity, size)
+		response.Activity[0] = netomatic.AgentActivity{
 			RunID: runID, Status: "available", Size: size,
-		})
+		}
 	}
 	s.writeJSON(w, http.StatusOK, response)
 }
@@ -814,7 +818,7 @@ func (s *Server) runOutput(w http.ResponseWriter, r *http.Request) {
 	for _, entry := range page.Entries {
 		text = append(text, entry.Text)
 	}
-	s.writeJSON(w, http.StatusOK, netomatic.RunOutputResponse{Output: netomatic.RunOutput{RunID: r.PathValue("run"), Output: strings.Join(text, "\n"), Done: page.Next == offset}})
+	s.writeJSON(w, http.StatusOK, netomatic.RunOutputResponse{Output: netomatic.RunOutput{RunID: r.PathValue("run"), Output: strings.Join(text, "\n"), Next: page.Next, Done: page.Next == offset}})
 }
 
 func (s *Server) completeEpic(w http.ResponseWriter, r *http.Request) {

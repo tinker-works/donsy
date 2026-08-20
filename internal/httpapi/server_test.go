@@ -222,8 +222,14 @@ func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
 		t.Fatal(err)
 	}
 	epic.PullRequests = []epicpkg.PullRequest{{ID: "pr-1", Head: "feature/one", Status: epicpkg.PullRequestOpen, Approved: true}}
-	workspace := &httpTestWorkspace{epics: map[string]epicpkg.Epic{epic.ID: epic}}
-	output := &httpTestRunOutput{pages: map[int64][]string{8: {"next"}}, next: map[int64]int64{8: 12}, sizes: map[string]int64{"run-1": 42}}
+	workspace := &httpTestWorkspace{
+		epics: map[string]epicpkg.Epic{epic.ID: epic},
+		agentSettings: agent.AgentSettings{Roles: map[agent.AgentRole]agent.AgentProfile{
+			agent.AgentRoleCoding:  {Agent: "coder", Variant: "high", MaxRounds: 3},
+			agent.AgentRoleRefiner: {Agent: "refiner", Variant: "low", MaxRounds: 1},
+		}},
+	}
+	output := &httpTestRunOutput{pages: map[int64][]string{8: {"next"}}, next: map[int64]int64{8: 24}, sizes: map[string]int64{"run-1": 42}}
 	registry := &httpTestRegistry{
 		projects:  []domain.Project{{ID: 1, Name: "demo"}},
 		sandboxes: []agent.Sandbox{{ID: "sandbox-1", Name: "demo-coder", Status: agent.SandboxStatusRunning}},
@@ -247,12 +253,18 @@ func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
 	if err != nil || len(sandboxes.Sandboxes) != 1 || sandboxes.Sandboxes[0].ID != "sandbox-1" {
 		t.Fatalf("sandboxes = %#v, error = %v", sandboxes, err)
 	}
+	settings, err := client.GetAgentSettings(context.Background(), netomatic.GetAgentSettingsRequest{Project: "demo"})
+	if err != nil || len(settings.Settings) != len(agent.Roles()) ||
+		settings.Settings[0].Values["role"] != string(agent.AgentRoleRefiner) ||
+		settings.Settings[2].Agent != "coder" || settings.Settings[2].Values["maxRounds"] != "3" {
+		t.Fatalf("settings = %#v, error = %v", settings, err)
+	}
 	activity, err := client.AgentActivity(context.Background(), netomatic.AgentActivityRequest{Run: "run-1"})
-	if err != nil || len(activity.Activity) != 1 || activity.Activity[0].Size != 42 {
+	if err != nil || len(activity.Activity) != 42 || activity.Activity[0].Size != 42 {
 		t.Fatalf("activity = %#v, error = %v", activity, err)
 	}
 	page, err := client.RunOutput(context.Background(), netomatic.RunOutputRequest{Run: "run-1", Offset: 8})
-	if err != nil || page.Output.Output != "next" || !reflect.DeepEqual(output.asked, []int64{8}) {
+	if err != nil || page.Output.Output != "next" || page.Output.Next != 24 || !reflect.DeepEqual(output.asked, []int64{8}) {
 		t.Fatalf("page = %#v, output offsets = %v, error = %v", page, output.asked, err)
 	}
 	completed, err := client.Complete(context.Background(), netomatic.CompleteRequest{Project: "demo", Run: "run-1"})
@@ -335,6 +347,7 @@ func (f httpTestFactory) Open(string) application.Workspace { return f.workspace
 type httpTestWorkspace struct {
 	repositories  []string
 	epics         map[string]epicpkg.Epic
+	agentSettings agent.AgentSettings
 	readEpicCalls int
 }
 
@@ -354,7 +367,7 @@ func (w *httpTestWorkspace) ReadEpic(id string) (epicpkg.Epic, error) {
 	return epic, nil
 }
 func (w *httpTestWorkspace) AgentSettings() (agent.AgentSettings, error) {
-	return agent.AgentSettings{}, nil
+	return w.agentSettings, nil
 }
 func (w *httpTestWorkspace) UpdateAgentSettings(func(*agent.AgentSettings) error) error {
 	return nil

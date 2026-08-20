@@ -258,7 +258,7 @@ var contractDTOs = map[string]any{
 	}}},
 	"RunOutputRequest": RunOutputRequest{Run: "run-1", Offset: 128},
 	"RunOutputResponse": RunOutputResponse{Output: RunOutput{
-		RunID: "run-1", Output: "finished step\n", Done: true,
+		RunID: "run-1", Output: "finished step\n", Next: 142, Done: true,
 	}},
 	"CapabilitiesResponse": contractFixture{
 		value: CapabilitiesResponse{

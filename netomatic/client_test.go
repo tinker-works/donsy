@@ -800,7 +800,7 @@ func TestHTTPClientSendsRunOutputOffsetAsQuery(t *testing.T) {
 	var query url.Values
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		query = r.URL.Query()
-		_, _ = io.WriteString(w, `{"output":{"run_id":"run-1","output":"next","done":false}}`)
+		_, _ = io.WriteString(w, `{"output":{"run_id":"run-1","output":"next","next":256,"done":false}}`)
 	}))
 	defer server.Close()
 
@@ -812,7 +812,7 @@ func TestHTTPClientSendsRunOutputOffsetAsQuery(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !reflect.DeepEqual(query, url.Values{"offset": {"128"}}) || response.Output.Output != "next" {
+	if !reflect.DeepEqual(query, url.Values{"offset": {"128"}}) || response.Output.Output != "next" || response.Output.Next != 256 {
 		t.Fatalf("query = %v, response = %#v", query, response)
 	}
 }

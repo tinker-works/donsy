@@ -272,8 +272,8 @@ type Sandbox struct {
 }
 
 type AgentActivity struct {
-	RunID     string `json:"run_id"`
-	Status    string `json:"status"`
+	RunID     string `json:"run_id,omitempty"`
+	Status    string `json:"status,omitempty"`
 	Message   string `json:"message,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
 	Size      int64  `json:"size,omitempty"`
@@ -282,7 +282,10 @@ type AgentActivity struct {
 type RunOutput struct {
 	RunID  string `json:"run_id"`
 	Output string `json:"output"`
-	Done   bool   `json:"done"`
+	// Next is the byte offset to use for the next output poll. It cannot be
+	// derived from Output because transcript parsing can change its length.
+	Next int64 `json:"next"`
+	Done bool  `json:"done"`
 }
 
 type ProjectPath struct {
