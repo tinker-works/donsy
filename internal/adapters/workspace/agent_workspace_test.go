@@ -210,6 +210,32 @@ func TestAgentWorkspace_Ensure_ShouldResetACommitMadeInTheLocalClone(t *testing.
 	}
 }
 
+func TestAgentWorkspace_Ensure_ShouldIgnoreAMutatedCheckoutOrigin(t *testing.T) {
+	// Arrange
+	workspace, remote := localAgentWorkspace(t)
+	path, err := workspace.Ensure(context.Background(), "epic-1", "acme/widgets")
+	if err != nil {
+		t.Fatal(err)
+	}
+	evil := filepath.Join(t.TempDir(), "evil.git")
+	if _, err := git.PlainInit(evil, true); err != nil {
+		t.Fatal(err)
+	}
+	mutateOrigin(t, path, evil)
+	advanceRemoteMaster(t, remote, "trusted.txt", "trusted\n", "base: trusted update")
+
+	// Act
+	_, err = workspace.Ensure(context.Background(), "epic-1", "acme/widgets")
+
+	// Assert
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "trusted.txt")); err != nil {
+		t.Fatalf("expected the configured repository to be refreshed: %v", err)
+	}
+}
+
 // Every round of an epic calls Ensure for each of its repositories, and rounds
 // run concurrently. go-git has no equivalent of git's index.lock, so without
 // serializing, two clones racing into one directory interleave their writes to

@@ -138,21 +138,23 @@ func (w CodeWorkspace) Checkout(
 		return "", err
 	}
 	reference := plumbing.NewBranchReferenceName(branch)
-	if _, err := repository.Reference(reference, true); err != nil {
-		// resolveCommit tries origin/<branch> before giving up, so an earlier
-		// round's published branch is picked up rather than cut again at base
-		// — which would silently drop that round's commits.
-		start, resolveErr := resolveCommit(repository, branch)
-		if resolveErr != nil {
-			if start, resolveErr = resolveCommit(repository, base); resolveErr != nil {
-				return "", resolveErr
-			}
-		}
-		if err := repository.Storer.SetReference(
-			plumbing.NewHashReference(reference, start.Hash),
-		); err != nil {
-			return "", err
-		}
+	// A checkout can contain a commit from a round whose push or gate failed.
+	// Reset an existing branch to the published branch, or to base when no
+	// published branch exists, so a retry never publishes failed work.
+	start, resolveErr := resolveCommit(repository, "origin/"+branch)
+	if resolveErr != nil {
+		start, resolveErr = resolveCommit(repository, "origin/"+base)
+	}
+	if resolveErr != nil {
+		start, resolveErr = resolveCommit(repository, base)
+	}
+	if resolveErr != nil {
+		return "", resolveErr
+	}
+	if err := repository.Storer.SetReference(
+		plumbing.NewHashReference(reference, start.Hash),
+	); err != nil {
+		return "", err
 	}
 	// Force, because a round that was killed never reached the commit that
 	// publishes its work: the stall guard, the runaway guard, a cancel, or the
@@ -216,11 +218,12 @@ func (w CodeWorkspace) ensureClone(
 }
 
 func (w CodeWorkspace) fetch(ctx context.Context, repository *git.Repository, name string) error {
-	auth, err := authForURL(w.remoteURL(name))
+	remoteURL := w.remoteURL(name)
+	auth, err := authForURL(remoteURL)
 	if err != nil {
 		return err
 	}
-	err = repository.FetchContext(ctx, &git.FetchOptions{RemoteName: "origin", Auth: auth})
+	err = trustedRemote(repository, remoteURL).FetchContext(ctx, &git.FetchOptions{Auth: auth})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("fetch repository %q: %w", name, err)
 	}
@@ -374,16 +377,16 @@ func (w CodeWorkspace) Push(
 	if err != nil {
 		return err
 	}
-	auth, err := authForURL(w.remoteURL(checkout.Repository))
+	remoteURL := w.remoteURL(checkout.Repository)
+	auth, err := authForURL(remoteURL)
 	if err != nil {
 		return err
 	}
 	reference := plumbing.NewBranchReferenceName(branch)
-	err = repository.PushContext(ctx, &git.PushOptions{
-		RemoteName: "origin",
-		Auth:       auth,
-		RefSpecs:   []config.RefSpec{config.RefSpec(reference.String() + ":" + reference.String())},
-		Atomic:     true,
+	err = trustedRemote(repository, remoteURL).PushContext(ctx, &git.PushOptions{
+		Auth:     auth,
+		RefSpecs: []config.RefSpec{config.RefSpec(reference.String() + ":" + reference.String())},
+		Atomic:   true,
 	})
 	if err != nil && !errors.Is(err, git.NoErrAlreadyUpToDate) {
 		return fmt.Errorf("push %s: %w", branch, err)

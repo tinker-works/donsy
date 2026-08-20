@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -66,9 +67,9 @@ func retireLima(ctx context.Context, root string) error {
 }
 
 // deleteLimaInstances removes the agent VMs, and only those: names are matched
-// against the prefix the old adapter minted, so a Lima instance the user
-// created for something else is left alone. Colima's own instances live under a
-// different Lima home and are not visible here at all.
+// against the old adapter's grammar, so a Lima instance the user created for
+// something else is left alone. Colima's own instances live under a different
+// Lima home and are not visible here at all.
 func deleteLimaInstances(ctx context.Context) error {
 	if _, err := exec.LookPath("limactl"); err != nil {
 		return nil
@@ -90,7 +91,7 @@ func deleteLimaInstances(ctx context.Context) error {
 		if err := json.Unmarshal([]byte(line), &instance); err != nil {
 			continue
 		}
-		if !strings.HasPrefix(instance.Name, retiredInstancePrefix) {
+		if !legacyInstanceName(instance.Name) {
 			continue
 		}
 		deleteCtx, cancelDelete := context.WithTimeout(ctx, retireTimeout)
@@ -103,4 +104,83 @@ func deleteLimaInstances(ctx context.Context) error {
 		slog.Info("retired a Lima agent VM", "instance", instance.Name)
 	}
 	return errors.Join(errs...)
+}
+
+// legacyInstanceName matches the names minted by the Lima sandbox adapter:
+// gm-<project>-<subject>-<role>, with an optional identity digest used by later
+// layouts. A prefix alone is not ownership proof: users commonly have their own
+// gm-* Lima instances.
+func legacyInstanceName(name string) bool {
+	if !strings.HasPrefix(name, retiredInstancePrefix) {
+		return false
+	}
+	parts := strings.Split(strings.TrimPrefix(name, retiredInstancePrefix), "-")
+	if len(parts) < 3 || !decimal(parts[0]) {
+		return false
+	}
+	parts = parts[1:]
+	if len(parts) > 1 && len(parts[len(parts)-1]) == 8 && hexadecimal(parts[len(parts)-1]) {
+		parts = parts[:len(parts)-1]
+	}
+	for _, role := range []string{"refiner", "issue-reviewer", "coding", "pr-reviewer", "merge"} {
+		roleParts := strings.Split(role, "-")
+		if len(parts) <= len(roleParts) || !sameParts(parts[len(parts)-len(roleParts):], roleParts) {
+			continue
+		}
+		return bareSlug(parts[:len(parts)-len(roleParts)])
+	}
+	return false
+}
+
+func sameParts(left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for index := range left {
+		if left[index] != right[index] {
+			return false
+		}
+	}
+	return true
+}
+
+func bareSlug(parts []string) bool {
+	if len(parts) == 0 {
+		return false
+	}
+	for _, part := range parts {
+		if part == "" || !slugPart(part) {
+			return false
+		}
+	}
+	return true
+}
+
+func slugPart(value string) bool {
+	for _, character := range value {
+		if (character < 'a' || character > 'z') &&
+			(character < '0' || character > '9') {
+			return false
+		}
+	}
+	return value != ""
+}
+
+func decimal(value string) bool {
+	if value == "" {
+		return false
+	}
+	_, err := strconv.ParseUint(value, 10, 64)
+	return err == nil
+}
+
+func hexadecimal(value string) bool {
+	for _, character := range value {
+		if (character < 'a' || character > 'f') &&
+			(character < 'A' || character > 'F') &&
+			(character < '0' || character > '9') {
+			return false
+		}
+	}
+	return value != ""
 }

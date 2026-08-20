@@ -8,20 +8,21 @@ import (
 	"strings"
 
 	git "github.com/go-git/go-git/v5"
+	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	gitssh "github.com/go-git/go-git/v5/plumbing/transport/ssh"
 	sshconfig "github.com/kevinburke/ssh_config"
 )
 
-func repositoryAuth(repository *git.Repository) (transport.AuthMethod, error) {
-	remote, err := repository.Remote("origin")
-	if err != nil {
-		return nil, fmt.Errorf("read origin remote: %w", err)
-	}
-	if len(remote.Config().URLs) == 0 {
-		return nil, fmt.Errorf("origin remote has no URL")
-	}
-	return authForURL(remote.Config().URLs[0])
+// trustedRemote keeps host-side Git operations away from the checkout's mutable
+// origin. The checkout is writable inside a sandbox, so its config cannot be an
+// authority for where host credentials are sent.
+func trustedRemote(repository *git.Repository, remoteURL string) *git.Remote {
+	return git.NewRemote(repository.Storer, &config.RemoteConfig{
+		Name:  "origin",
+		URLs:  []string{remoteURL},
+		Fetch: []config.RefSpec{config.RefSpec("+refs/heads/*:refs/remotes/origin/*")},
+	})
 }
 
 func authForURL(remote string) (transport.AuthMethod, error) {

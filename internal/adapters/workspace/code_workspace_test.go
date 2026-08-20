@@ -172,6 +172,22 @@ func remoteBranchHash(t *testing.T, remote, branch string) (string, error) {
 	return reference.Hash().String(), nil
 }
 
+func mutateOrigin(t *testing.T, path, remote string) {
+	t.Helper()
+	repository, err := git.PlainOpen(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	config, err := repository.Config()
+	if err != nil {
+		t.Fatal(err)
+	}
+	config.Remotes["origin"].URLs = []string{remote}
+	if err := repository.SetConfig(config); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestCodeWorkspace_DefaultBranch_ShouldReadTheRemoteHead(t *testing.T) {
 	// Arrange
 	workspace, _, _ := localCodeWorkspace(t)
@@ -227,6 +243,73 @@ func TestCodeWorkspace_ShouldCutCommitAndPublishARound(t *testing.T) {
 	}
 	if len(commits) != 1 || len(commits[0].Paths) != 1 || commits[0].Paths[0] != "widget.go" {
 		t.Fatalf("unexpected commits: %+v", commits)
+	}
+}
+
+func TestCodeWorkspace_Push_ShouldIgnoreAMutatedCheckoutOrigin(t *testing.T) {
+	// Arrange: a sandbox can write .git/config, but host credentials must still
+	// only reach the repository configured by the application.
+	workspace, remote, checkout := localCodeWorkspace(t)
+	evil := filepath.Join(t.TempDir(), "evil.git")
+	if _, err := git.PlainInit(evil, true); err != nil {
+		t.Fatal(err)
+	}
+	path, err := workspace.Checkout(context.Background(), checkout, "go-merge/issue-1", "master")
+	if err != nil {
+		t.Fatal(err)
+	}
+	mutateOrigin(t, path, evil)
+	if err := os.WriteFile(filepath.Join(path, "widget.go"), []byte("package widget\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.CommitAll(checkout, "ai: round 1 on issue issue-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Act
+	if err := workspace.Push(context.Background(), checkout, "go-merge/issue-1"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Assert
+	if _, err := remoteBranchHash(t, remote, "go-merge/issue-1"); err != nil {
+		t.Fatalf("expected the configured repository to receive the push: %v", err)
+	}
+	if _, err := remoteBranchHash(t, evil, "go-merge/issue-1"); !errors.Is(err, plumbing.ErrReferenceNotFound) {
+		t.Fatalf("expected the mutated repository to remain untouched, got %v", err)
+	}
+}
+
+func TestCodeWorkspace_Checkout_ShouldResetACommitFromAFailedPush(t *testing.T) {
+	// Arrange
+	workspace, remote, checkout := localCodeWorkspace(t)
+	configuredRemote := remote
+	workspace.remote = func(string) string { return configuredRemote }
+	path, err := workspace.Checkout(context.Background(), checkout, "go-merge/issue-1", "master")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(path, "failed.go"), []byte("package failed\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := workspace.CommitAll(checkout, "ai: failed round"); err != nil {
+		t.Fatal(err)
+	}
+	configuredRemote = filepath.Join(t.TempDir(), "missing.git")
+	if err := workspace.Push(context.Background(), checkout, "go-merge/issue-1"); err == nil {
+		t.Fatal("expected the failed push to be rejected")
+	}
+	configuredRemote = remote
+
+	// Act
+	_, err = workspace.Checkout(context.Background(), checkout, "go-merge/issue-1", "master")
+
+	// Assert
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(filepath.Join(path, "failed.go")); !os.IsNotExist(err) {
+		t.Fatalf("expected failed round changes to be discarded, got %v", err)
 	}
 }
 

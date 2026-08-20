@@ -107,13 +107,12 @@ func (w AgentWorkspace) ensureLocked(
 		// agent holds no keys — so a repository that cloned fine would stop
 		// updating, and only on the second visit. Fetch and reset again so the
 		// checkout is restored to the refreshed remote-tracking ref.
-		auth, err := repositoryAuth(repositoryHandle)
+		remoteURL := "git@github.com:" + repository + ".git"
+		auth, err := authForURL(remoteURL)
 		if err != nil {
 			return "", err
 		}
-		fetchErr := repositoryHandle.FetchContext(ctx, &git.FetchOptions{
-			RemoteName: "origin", Auth: auth,
-		})
+		fetchErr := trustedRemote(repositoryHandle, remoteURL).FetchContext(ctx, &git.FetchOptions{Auth: auth})
 		if fetchErr != nil && !errors.Is(fetchErr, git.NoErrAlreadyUpToDate) {
 			return "", fmt.Errorf("refresh repository %q: %w", repository, fetchErr)
 		}
