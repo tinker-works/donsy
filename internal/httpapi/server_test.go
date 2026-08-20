@@ -21,7 +21,7 @@ import (
 	"github.com/tinker-works/donsy/netomatic"
 )
 
-func TestHTTPServerInteroperatesWithEveryNetomaticOperation(t *testing.T) {
+func TestHTTPServerReportsDocumentedUnavailableOperations(t *testing.T) {
 	server, err := New(&usecases.UseCases{CurrentUser: "octocat"}, nil, "token")
 	if err != nil {
 		t.Fatal(err)
@@ -35,16 +35,13 @@ func TestHTTPServerInteroperatesWithEveryNetomaticOperation(t *testing.T) {
 
 	for _, operation := range netomatic.ContractOperations() {
 		t.Run(operation.Name, func(t *testing.T) {
-			err := callOperation(client, operation.Name)
-			if operation.Name == "Process" || operation.Name == "Capabilities" {
-				if err != nil {
-					t.Fatalf("%s() error = %v", operation.Name, err)
-				}
-				return
+			if !operation.Unavailable {
+				t.Skip("configured operations are covered by fake-use-case interoperability tests")
 			}
+			err := callOperation(client, operation.Name)
 			var apiError *netomatic.APIError
 			if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != netomatic.ErrorFeatureNotConfigured {
-				t.Fatalf("%s() error = %#v, want documented unavailable response", operation.Name, err)
+				t.Fatalf("%s() error = %#v, want feature_not_configured", operation.Name, err)
 			}
 		})
 	}
@@ -119,6 +116,14 @@ func TestHandlerRejectsUnauthorizedAndCrossOriginRequests(t *testing.T) {
 	}
 }
 
+func TestNewRequiresDaemonToken(t *testing.T) {
+	for _, tokens := range [][]string{nil, {""}, {"token", "other"}} {
+		if _, err := New(&usecases.UseCases{}, nil, tokens...); err == nil {
+			t.Fatalf("New(..., %#v) succeeded", tokens)
+		}
+	}
+}
+
 func TestHTTPServerCreatesEpicsAndIssues(t *testing.T) {
 	workspace := &httpTestWorkspace{repositories: []string{"acme/widgets"}, epics: make(map[string]epicpkg.Epic)}
 	registry := &httpTestRegistry{projects: []domain.Project{{ID: 1, Name: "demo"}}}
@@ -175,6 +180,88 @@ func TestHandlerMapsUnexpectedFailuresToInternalError(t *testing.T) {
 	if !errors.As(err, &response) || response.StatusCode != http.StatusInternalServerError ||
 		response.Code != netomatic.ErrorInternal || response.Detail != "the daemon could not process the request" {
 		t.Fatalf("error = %#v", err)
+	}
+}
+
+func TestHandlerClassifiesValidationFailuresAsBadRequests(t *testing.T) {
+	registry := &httpTestRegistry{projects: []domain.Project{{ID: 1, Name: "demo"}}}
+	useCases := usecases.NewUseCases(registry, httpTestFactory{workspace: &httpTestWorkspace{epics: make(map[string]epicpkg.Epic)}}, httpTestClock{}, nil, nil)
+	server, err := New(useCases, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		path string
+		body string
+	}{
+		{name: "project", path: "/projects", body: `{"name":""}`},
+		{name: "epic", path: "/projects/demo/epics", body: `{"project":"demo","title":""}`},
+		{name: "issue", path: "/projects/demo/epics/epic-1/issues", body: `{"project":"demo","epic":"epic-1","title":""}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request := httptest.NewRequest(http.MethodPost, netomatic.APIPrefix+test.path, strings.NewReader(test.body))
+			request.Header.Set("Authorization", "Bearer token")
+			request.Header.Set("Content-Type", "application/json")
+			recorder := httptest.NewRecorder()
+			server.Handler().ServeHTTP(recorder, request)
+			var response netomatic.APIError
+			if err := json.NewDecoder(recorder.Body).Decode(&response); err != nil {
+				t.Fatal(err)
+			}
+			if recorder.Code != http.StatusBadRequest || response.Code != netomatic.ErrorInvalidRequest {
+				t.Fatalf("response = %d %#v", recorder.Code, response)
+			}
+		})
+	}
+}
+
+func TestHandlerExecutesRetainedAgentOperations(t *testing.T) {
+	epic, err := epicpkg.CreateEpic("Epic", "octocat", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	epic.PullRequests = []epicpkg.PullRequest{{ID: "pr-1", Head: "feature/one", Status: epicpkg.PullRequestOpen, Approved: true}}
+	workspace := &httpTestWorkspace{epics: map[string]epicpkg.Epic{epic.ID: epic}}
+	output := &httpTestRunOutput{pages: map[int64][]string{8: {"next"}}, next: map[int64]int64{8: 12}, sizes: map[string]int64{"run-1": 42}}
+	registry := &httpTestRegistry{
+		projects:  []domain.Project{{ID: 1, Name: "demo"}},
+		sandboxes: []agent.Sandbox{{ID: "sandbox-1", Name: "demo-coder", Status: agent.SandboxStatusRunning}},
+		agentRuns: map[string]agent.AgentRun{"run-1": {ID: "run-1", ProjectID: 1, Subject: agent.AgentSubject{Kind: agent.AgentSubjectEpic, ID: epic.ID}}},
+	}
+	useCases := usecases.NewUseCases(registry, httpTestFactory{workspace: workspace}, httpTestClock{}, nil, &usecases.EpicAgentDependencies{
+		Output: output, Builder: httpTestCommandBuilder{},
+	})
+	server, err := New(useCases, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	testServer := httptest.NewServer(server.Handler())
+	defer testServer.Close()
+	client, err := netomatic.NewHTTPClient(testServer.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	sandboxes, err := client.ListSandboxes(context.Background(), netomatic.ListSandboxesRequest{})
+	if err != nil || len(sandboxes.Sandboxes) != 1 || sandboxes.Sandboxes[0].ID != "sandbox-1" {
+		t.Fatalf("sandboxes = %#v, error = %v", sandboxes, err)
+	}
+	activity, err := client.AgentActivity(context.Background(), netomatic.AgentActivityRequest{Run: "run-1"})
+	if err != nil || len(activity.Activity) != 1 || activity.Activity[0].Size != 42 {
+		t.Fatalf("activity = %#v, error = %v", activity, err)
+	}
+	page, err := client.RunOutput(context.Background(), netomatic.RunOutputRequest{Run: "run-1", Offset: 8})
+	if err != nil || page.Output.Output != "next" || !reflect.DeepEqual(output.asked, []int64{8}) {
+		t.Fatalf("page = %#v, output offsets = %v, error = %v", page, output.asked, err)
+	}
+	completed, err := client.Complete(context.Background(), netomatic.CompleteRequest{Project: "demo", Run: "run-1"})
+	if err != nil || completed.Complete || workspace.readEpicCalls == 0 {
+		t.Fatalf("completed = %#v, reads = %d, error = %v", completed, workspace.readEpicCalls, err)
+	}
+	review, err := client.ReviewApprovedBranches(context.Background(), netomatic.ReviewApprovedBranchesRequest{Project: "demo"})
+	if err != nil || !reflect.DeepEqual(review.Branches, []string{"feature/one"}) {
+		t.Fatalf("review = %#v, error = %v", review, err)
 	}
 }
 
@@ -246,8 +333,9 @@ type httpTestFactory struct{ workspace application.Workspace }
 func (f httpTestFactory) Open(string) application.Workspace { return f.workspace }
 
 type httpTestWorkspace struct {
-	repositories []string
-	epics        map[string]epicpkg.Epic
+	repositories  []string
+	epics         map[string]epicpkg.Epic
+	readEpicCalls int
 }
 
 func (w *httpTestWorkspace) ListEpics() ([]epicpkg.Epic, error) {
@@ -258,6 +346,7 @@ func (w *httpTestWorkspace) ListEpics() ([]epicpkg.Epic, error) {
 	return epics, nil
 }
 func (w *httpTestWorkspace) ReadEpic(id string) (epicpkg.Epic, error) {
+	w.readEpicCalls++
 	epic, ok := w.epics[id]
 	if !ok {
 		return epicpkg.Epic{}, os.ErrNotExist
@@ -294,8 +383,10 @@ func (w *httpTestWorkspace) UpdateEpic(id string, change func(*epicpkg.Epic) err
 }
 
 type httpTestRegistry struct {
-	projects []domain.Project
-	listErr  error
+	projects  []domain.Project
+	listErr   error
+	sandboxes []agent.Sandbox
+	agentRuns map[string]agent.AgentRun
 }
 
 func (r *httpTestRegistry) List() ([]domain.Project, error) { return r.projects, r.listErr }
@@ -314,17 +405,45 @@ func (*httpTestRegistry) ListRepositories() ([]domain.Repository, error)        
 func (*httpTestRegistry) ReplaceRepositories(string, []domain.Repository) error { return nil }
 func (*httpTestRegistry) SaveRepository(domain.Repository) error                { return nil }
 func (*httpTestRegistry) SaveSandbox(agent.Sandbox) error                       { return nil }
-func (*httpTestRegistry) ListSandboxes(uint) ([]agent.Sandbox, error)           { return nil, nil }
+func (r *httpTestRegistry) ListSandboxes(uint) ([]agent.Sandbox, error)         { return r.sandboxes, nil }
 func (*httpTestRegistry) SaveAgentRun(agent.AgentRun) error                     { return nil }
 func (*httpTestRegistry) ListAgentRuns(uint, agent.AgentSubject) ([]agent.AgentRun, error) {
 	return nil, nil
 }
 func (*httpTestRegistry) ListProjectAgentRuns(uint) ([]agent.AgentRun, error) { return nil, nil }
-func (*httpTestRegistry) GetAgentRun(string) (agent.AgentRun, error) {
-	return agent.AgentRun{}, os.ErrNotExist
+func (r *httpTestRegistry) GetAgentRun(id string) (agent.AgentRun, error) {
+	run, ok := r.agentRuns[id]
+	if !ok {
+		return agent.AgentRun{}, os.ErrNotExist
+	}
+	return run, nil
 }
 func (*httpTestRegistry) DeleteSubjectRuntime(uint, agent.AgentSubject) error { return nil }
 func (*httpTestRegistry) DeleteProjectRuntime(uint) error                     { return nil }
 
 var _ application.Registry = (*httpTestRegistry)(nil)
 var _ agent_runtime.AgentRegistry = (*httpTestRegistry)(nil)
+
+type httpTestRunOutput struct {
+	pages map[int64][]string
+	next  map[int64]int64
+	sizes map[string]int64
+	asked []int64
+}
+
+func (o *httpTestRunOutput) Tail(_ string, from int64) ([]string, int64, error) {
+	o.asked = append(o.asked, from)
+	return o.pages[from], o.next[from], nil
+}
+func (o *httpTestRunOutput) Size(runID string) (int64, error) { return o.sizes[runID], nil }
+func (*httpTestRunOutput) Discard(string) error               { return nil }
+
+type httpTestCommandBuilder struct{}
+
+func (httpTestCommandBuilder) Command(application.AgentInvocation) ([]string, error) { return nil, nil }
+func (httpTestCommandBuilder) ExtractAnswer(string) string                           { return "" }
+func (httpTestCommandBuilder) ParseTranscript(value string) []agent.TranscriptEntry {
+	return []agent.TranscriptEntry{{Text: value}}
+}
+func (httpTestCommandBuilder) ParseUsage(string) agent.RunUsage { return agent.RunUsage{} }
+func (httpTestCommandBuilder) ReviewApproved(string) bool       { return false }

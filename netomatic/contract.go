@@ -276,6 +276,7 @@ type AgentActivity struct {
 	Status    string `json:"status"`
 	Message   string `json:"message,omitempty"`
 	UpdatedAt string `json:"updated_at,omitempty"`
+	Size      int64  `json:"size,omitempty"`
 }
 
 type RunOutput struct {
@@ -795,15 +796,15 @@ var Contract = []Operation{
 	{Name: "UpdateProjectRepositories", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/repositories", Path: "UpdateProjectRepositoriesPath", Request: "UpdateProjectRepositoriesRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
 	{Name: "GetAgentSettings", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-settings", Request: "GetAgentSettingsRequest", Response: "GetAgentSettingsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "ListAgentRuns", Method: MethodGet, Route: APIPrefix + "/projects/{project}/agent-runs", Request: "ListAgentRunsRequest", Response: "ListAgentRunsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/sandboxes", Request: "ListSandboxesRequest", Response: "ListSandboxesResponse", Unavailable: true, Authenticated: true},
+	{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/sandboxes", Request: "ListSandboxesRequest", Response: "ListSandboxesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "CancelAgentRun", Method: MethodPost, Route: APIPrefix + "/agent-runs/{run}/cancel", Request: "CancelAgentRunRequest", Response: "CancelAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/activity", Request: "AgentActivityRequest", Response: "AgentActivityResponse", Unavailable: true, Authenticated: true},
+	{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/activity", Request: "AgentActivityRequest", Response: "AgentActivityResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}/output", Request: "RunOutputRequest", Response: "RunOutputResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "Repository", SuccessStatus: http.StatusCreated, Authenticated: true},
 	{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{run}", Request: "GetAgentRunRequest", Response: "GetAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
-	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", Unavailable: true, Authenticated: true},
-	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", Unavailable: true, Authenticated: true},
+	{Name: "Complete", Method: MethodPost, Route: APIPrefix + "/complete", Request: "CompleteRequest", Response: "CompleteResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+	{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/review-approved-branches", Request: "ReviewApprovedBranchesRequest", Response: "ReviewApprovedBranchesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
 	{Name: "RunEpic", Method: MethodPost, Route: APIPrefix + "/runs/epic", Request: "RunEpicRequest", Response: "RunEpicResponse", Unavailable: true, Authenticated: true},
 	{Name: "RunIssue", Method: MethodPost, Route: APIPrefix + "/runs/issue", Request: "RunIssueRequest", Response: "RunIssueResponse", Unavailable: true, Authenticated: true},
 	{Name: "Reconcile", Method: MethodPost, Route: APIPrefix + "/reconcile", Request: "ReconcileRequest", Response: "ReconcileResponse", Unavailable: true, Authenticated: true},

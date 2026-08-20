@@ -795,3 +795,24 @@ func TestHTTPClientBoundsDaemonLogRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestHTTPClientSendsRunOutputOffsetAsQuery(t *testing.T) {
+	var query url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		_, _ = io.WriteString(w, `{"output":{"run_id":"run-1","output":"next","done":false}}`)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.RunOutput(context.Background(), RunOutputRequest{Run: "run-1", Offset: 128})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(query, url.Values{"offset": {"128"}}) || response.Output.Output != "next" {
+		t.Fatalf("query = %v, response = %#v", query, response)
+	}
+}

@@ -86,6 +86,10 @@ func agentRunResponse(run agent.AgentRun, project string) netomatic.AgentRun {
 	return response
 }
 
+func sandboxResponse(sandbox agent.Sandbox) netomatic.Sandbox {
+	return netomatic.Sandbox{ID: sandbox.ID, Name: sandbox.Name, Status: string(sandbox.Status)}
+}
+
 func timestampPointer(value *time.Time) string {
 	if value == nil {
 		return ""

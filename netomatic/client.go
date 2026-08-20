@@ -390,7 +390,8 @@ func (c *HTTPClient) AgentActivity(ctx context.Context, request AgentActivityReq
 func (c *HTTPClient) RunOutput(ctx context.Context, request RunOutputRequest) (RunOutputResponse, error) {
 	var response RunOutputResponse
 	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run) + "/output"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	query := url.Values{"offset": {strconv.FormatInt(request.Offset, 10)}}
+	err := c.do(ctx, MethodGet, route, true, query, nil, &response, http.StatusOK)
 	return response, err
 }
 

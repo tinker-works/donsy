@@ -61,6 +61,10 @@ func (s *Server) createProject(w http.ResponseWriter, r *http.Request) {
 		s.fail(w, err)
 		return
 	}
+	if strings.TrimSpace(request.Name) == "" {
+		s.fail(w, errInvalidRequest("project name is required"))
+		return
+	}
 	project, err := s.useCases.CreateProject.Handle(usecases.CreateProjectCommand{Name: request.Name})
 	if err != nil {
 		s.fail(w, err)
@@ -208,6 +212,9 @@ func (s *Server) createEpic(w http.ResponseWriter, r *http.Request) {
 	if err == nil && request.Project != "" && request.Project != project.Name {
 		err = errInvalidRequest("project does not match request path")
 	}
+	if err == nil && strings.TrimSpace(request.Title) == "" {
+		err = errInvalidRequest("epic title is required")
+	}
 	if err == nil && s.useCases.CreateEpic == nil {
 		err = errUnavailable("creating epics")
 	}
@@ -331,6 +338,9 @@ func (s *Server) createIssue(w http.ResponseWriter, r *http.Request) {
 	}
 	if err == nil && (request.Project != project.Name || request.Epic != r.PathValue("epic")) {
 		err = errInvalidRequest("request does not match path")
+	}
+	if err == nil && strings.TrimSpace(request.Title) == "" {
+		err = errInvalidRequest("issue title is required")
 	}
 	if err == nil && s.useCases.CreateIssue == nil {
 		err = errUnavailable("creating issues")
@@ -740,6 +750,51 @@ func (s *Server) cancelAgentRun(w http.ResponseWriter, r *http.Request) {
 	}
 	s.writeJSON(w, http.StatusOK, netomatic.CancelAgentRunResponse{Run: agentRunResponse(run, "")})
 }
+
+func (s *Server) listSandboxes(w http.ResponseWriter, _ *http.Request) {
+	if s.useCases.ListProjects == nil || s.useCases.ListSandboxes == nil {
+		s.fail(w, errUnavailable("listing sandboxes"))
+		return
+	}
+	projects, err := s.useCases.ListProjects.Handle(usecases.ListProjectsQuery{})
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	response := netomatic.ListSandboxesResponse{Sandboxes: make([]netomatic.Sandbox, 0)}
+	for _, project := range projects {
+		sandboxes, err := s.useCases.ListSandboxes.Handle(usecases.ListSandboxesQuery{ProjectID: project.ID})
+		if err != nil {
+			s.fail(w, err)
+			return
+		}
+		for _, sandbox := range sandboxes {
+			response.Sandboxes = append(response.Sandboxes, sandboxResponse(sandbox))
+		}
+	}
+	s.writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) agentActivity(w http.ResponseWriter, r *http.Request) {
+	if s.useCases.ReadRunOutput == nil {
+		s.fail(w, errUnavailable("agent activity"))
+		return
+	}
+	runID := r.PathValue("run")
+	if strings.TrimSpace(runID) == "" {
+		s.fail(w, errInvalidRequest("agent run ID is required"))
+		return
+	}
+	size, ok := s.useCases.ReadRunOutput.Sizes([]string{runID})[runID]
+	response := netomatic.AgentActivityResponse{Activity: make([]netomatic.AgentActivity, 0, 1)}
+	if ok {
+		response.Activity = append(response.Activity, netomatic.AgentActivity{
+			RunID: runID, Status: "available", Size: size,
+		})
+	}
+	s.writeJSON(w, http.StatusOK, response)
+}
+
 func (s *Server) runOutput(w http.ResponseWriter, r *http.Request) {
 	if s.useCases.ReadRunOutput == nil {
 		s.fail(w, errUnavailable("agent run output"))
@@ -760,6 +815,79 @@ func (s *Server) runOutput(w http.ResponseWriter, r *http.Request) {
 		text = append(text, entry.Text)
 	}
 	s.writeJSON(w, http.StatusOK, netomatic.RunOutputResponse{Output: netomatic.RunOutput{RunID: r.PathValue("run"), Output: strings.Join(text, "\n"), Done: page.Next == offset}})
+}
+
+func (s *Server) completeEpic(w http.ResponseWriter, r *http.Request) {
+	var request netomatic.CompleteRequest
+	err := s.decode(r, &request)
+	if err == nil && strings.TrimSpace(request.Project) == "" {
+		err = errInvalidRequest("project is required")
+	}
+	if err == nil && strings.TrimSpace(request.Run) == "" {
+		err = errInvalidRequest("run is required")
+	}
+	project, projectErr := s.projectNameValue(request.Project)
+	if err == nil {
+		err = projectErr
+	}
+	if err == nil && (s.useCases.GetAgentRun == nil || s.useCases.CompleteEpic == nil) {
+		err = errUnavailable("completing epics")
+	}
+	var completed bool
+	if err == nil {
+		var run agent.AgentRun
+		run, err = s.useCases.GetAgentRun.Handle(usecases.GetAgentRunQuery{RunID: request.Run})
+		if err == nil && run.ProjectID != project.ID {
+			err = errInvalidRequest("run does not belong to project")
+		}
+		if err == nil && run.Subject.Kind != agent.AgentSubjectEpic {
+			err = errInvalidRequest("run does not belong to an epic")
+		}
+		if err == nil {
+			completed, err = s.useCases.CompleteEpic.Handle(usecases.CompleteEpicCommand{Project: project, EpicID: run.Subject.ID})
+		}
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, netomatic.CompleteResponse{Complete: completed})
+}
+
+func (s *Server) reviewApprovedBranches(w http.ResponseWriter, r *http.Request) {
+	var request netomatic.ReviewApprovedBranchesRequest
+	err := s.decode(r, &request)
+	if err == nil && strings.TrimSpace(request.Project) == "" {
+		err = errInvalidRequest("project is required")
+	}
+	project, projectErr := s.projectNameValue(request.Project)
+	if err == nil {
+		err = projectErr
+	}
+	if err == nil && (s.useCases.ListEpics == nil || s.useCases.ReviewApprovedBranches == nil) {
+		err = errUnavailable("reviewing approved branches")
+	}
+	branches := make([]string, 0)
+	if err == nil {
+		var epics []epicpkg.Epic
+		epics, err = s.useCases.ListEpics.Handle(usecases.ListEpicsQuery{Project: project})
+		for _, epic := range epics {
+			if err != nil {
+				break
+			}
+			for _, pullRequest := range epic.PullRequests {
+				if pullRequest.Status == epicpkg.PullRequestOpen && pullRequest.Approved {
+					branches = append(branches, pullRequest.Head)
+				}
+			}
+			err = s.useCases.ReviewApprovedBranches.Handle(r.Context(), usecases.ReviewApprovedBranchesCommand{Project: project, EpicID: epic.ID})
+		}
+	}
+	if err != nil {
+		s.fail(w, err)
+		return
+	}
+	s.writeJSON(w, http.StatusOK, netomatic.ReviewApprovedBranchesResponse{Branches: branches})
 }
 
 func (s *Server) runEpic(w http.ResponseWriter, r *http.Request) {

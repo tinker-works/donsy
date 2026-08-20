@@ -31,19 +31,19 @@ type Server struct {
 	mutationMu    sync.Mutex
 }
 
-// New creates a loopback API server. The optional token is required for every
-// API route when supplied.
+// New creates a loopback API server that requires a bearer token for every API
+// route.
 func New(useCases *usecases.UseCases, logger *slog.Logger, tokens ...string) (*Server, error) {
 	if useCases == nil {
 		return nil, errors.New("HTTP API requires use cases")
 	}
+	if len(tokens) != 1 || strings.TrimSpace(tokens[0]) == "" {
+		return nil, errors.New("HTTP API requires a non-empty daemon token")
+	}
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{useCases: useCases, logger: logger}
-	if len(tokens) > 0 {
-		server.token = tokens[0]
-	}
+	server := &Server{useCases: useCases, logger: logger, token: tokens[0]}
 	mux := http.NewServeMux()
 	server.registerRoutes(mux)
 	server.handler = server.middleware(mux)
@@ -119,13 +119,13 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("PUT /api/v1/projects/{projectID}/repositories", s.updateProjectRepositories)
 	mux.HandleFunc("GET /api/v1/projects/{project}/agent-settings", s.getAgentSettings)
 	mux.HandleFunc("GET /api/v1/projects/{project}/agent-runs", s.listAgentRuns)
-	mux.HandleFunc("GET /api/v1/sandboxes", s.unavailable("listing sandboxes without a project"))
+	mux.HandleFunc("GET /api/v1/sandboxes", s.listSandboxes)
 	mux.HandleFunc("POST /api/v1/agent-runs/{run}/cancel", s.cancelAgentRun)
-	mux.HandleFunc("GET /api/v1/agent-runs/{run}/activity", s.unavailable("agent activity"))
+	mux.HandleFunc("GET /api/v1/agent-runs/{run}/activity", s.agentActivity)
 	mux.HandleFunc("GET /api/v1/agent-runs/{run}/output", s.runOutput)
 	mux.HandleFunc("GET /api/v1/agent-runs/{run}", s.getAgentRun)
-	mux.HandleFunc("POST /api/v1/complete", s.unavailable("completing runs without an epic"))
-	mux.HandleFunc("POST /api/v1/review-approved-branches", s.unavailable("reviewing approved branches without an epic"))
+	mux.HandleFunc("POST /api/v1/complete", s.completeEpic)
+	mux.HandleFunc("POST /api/v1/review-approved-branches", s.reviewApprovedBranches)
 	mux.HandleFunc("POST /api/v1/runs/epic", s.runEpic)
 	mux.HandleFunc("POST /api/v1/runs/issue", s.runIssue)
 	mux.HandleFunc("POST /api/v1/reconcile", s.unavailable("sandbox reconciliation"))
@@ -135,7 +135,7 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, netomatic.APIPrefix+"/") && s.token != "" && r.Header.Get("Authorization") != "Bearer "+s.token {
+		if strings.HasPrefix(r.URL.Path, netomatic.APIPrefix+"/") && r.Header.Get("Authorization") != "Bearer "+s.token {
 			s.writeError(w, http.StatusUnauthorized, netomatic.ErrorUnauthorized, "a valid daemon token is required")
 			return
 		}
@@ -147,10 +147,6 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 			}
 			s.mutationMu.Lock()
 			defer s.mutationMu.Unlock()
-		}
-		if s.token == "" && r.Host != "127.0.0.1:8337" && r.Host != "localhost:8337" && r.Host != "" {
-			s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, "Host is not allowed")
-			return
 		}
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		next.ServeHTTP(w, r)
@@ -181,7 +177,13 @@ func (s *Server) projectID(r *http.Request) (domain.Project, error) {
 }
 
 func (s *Server) projectName(r *http.Request) (domain.Project, error) {
-	name := r.PathValue("project")
+	return s.projectNameValue(r.PathValue("project"))
+}
+
+func (s *Server) projectNameValue(name string) (domain.Project, error) {
+	if strings.TrimSpace(name) == "" {
+		return domain.Project{}, errInvalidRequest("project is required")
+	}
 	return s.findProject(func(project domain.Project) bool { return project.Name == name })
 }
 
@@ -233,6 +235,10 @@ func (s *Server) fail(w http.ResponseWriter, err error) {
 		s.writeError(w, http.StatusNotFound, netomatic.ErrorNotFound, err.Error())
 		return
 	}
+	if isRequestValidationError(err) {
+		s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, err.Error())
+		return
+	}
 	s.logger.Error("HTTP API request failed", "error", err)
 	s.writeError(w, http.StatusInternalServerError, netomatic.ErrorInternal, "the daemon could not process the request")
 }
@@ -251,6 +257,16 @@ type resourceNotFound string
 
 func (e resourceNotFound) Error() string { return string(e) + " was not found" }
 func errNotFound(resource string) error  { return resourceNotFound(resource) }
+
+func isRequestValidationError(err error) bool {
+	detail := err.Error()
+	return strings.Contains(detail, " is required") ||
+		strings.Contains(detail, " cannot be empty") ||
+		strings.Contains(detail, "must contain only") ||
+		strings.Contains(detail, "is not a valid slug") ||
+		strings.Contains(detail, "has invalid state") ||
+		strings.Contains(detail, "has invalid status")
+}
 
 func (s *Server) unavailable(feature string) http.HandlerFunc {
 	return func(w http.ResponseWriter, _ *http.Request) {

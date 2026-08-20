@@ -254,7 +254,7 @@ var contractDTOs = map[string]any{
 	}},
 	"AgentActivityRequest": AgentActivityRequest{Run: "run-1"},
 	"AgentActivityResponse": AgentActivityResponse{Activity: []AgentActivity{{
-		RunID: "run-1", Status: "working", Message: "Writing code", UpdatedAt: "2026-08-19T12:01:00Z",
+		RunID: "run-1", Status: "working", Message: "Writing code", UpdatedAt: "2026-08-19T12:01:00Z", Size: 42,
 	}}},
 	"RunOutputRequest": RunOutputRequest{Run: "run-1", Offset: 128},
 	"RunOutputResponse": RunOutputResponse{Output: RunOutput{
