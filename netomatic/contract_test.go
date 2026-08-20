@@ -1,6 +1,7 @@
 package netomatic
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,11 +14,11 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+7 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+7)
+	if len(Contract) != ClientOperationCount+10 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+10)
 	}
-	if Contract[ClientOperationCount-1].Name != "ListSandboxes" {
-		t.Fatalf("last client operation = %q, want ListSandboxes", Contract[ClientOperationCount-1].Name)
+	if Contract[ClientOperationCount-1].Name != "RunOutput" {
+		t.Fatalf("last client operation = %q, want RunOutput", Contract[ClientOperationCount-1].Name)
 	}
 	if Contract[ClientOperationCount].Name != "Capabilities" || !Contract[ClientOperationCount].Authenticated {
 		t.Fatal("authenticated capabilities must follow the client operation inventory")
@@ -25,8 +26,8 @@ func TestContractIsComplete(t *testing.T) {
 	if Contract[ClientOperationCount+1].Name != "AddRepository" || !Contract[ClientOperationCount+1].Authenticated {
 		t.Fatal("daemon mutation operations should remain authenticated")
 	}
-	if Contract[ClientOperationCount+2].Name != "GetAgentRun" || !Contract[ClientOperationCount+2].Authenticated {
-		t.Fatal("agent run lookup must remain authenticated")
+	if Contract[len(Contract)-1].Name != "ReadDaemonLog" || !Contract[len(Contract)-1].Authenticated {
+		t.Fatal("daemon log must be the authenticated final operation")
 	}
 }
 
@@ -36,13 +37,6 @@ func TestOperationValidationAllowsNoContentRows(t *testing.T) {
 	}); err != nil {
 		t.Fatal(err)
 	}
-	if err := validateOperation(Operation{Name: "Unavailable", Method: MethodPost, Route: APIPrefix + "/items/{item}", Unavailable: true}); err != nil {
-		t.Fatal(err)
-	}
-	if err := validateOperation(Operation{Name: "Unavailable", Method: MethodPost, Route: APIPrefix + "/items/{item}", SuccessStatus: 204, Unavailable: true}); err == nil {
-		t.Fatal("unavailable operation accepted a success status")
-	}
-
 	for _, status := range []int{0, 199, 300, 500} {
 		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
 			err := validateOperation(Operation{
@@ -126,6 +120,14 @@ func contractFixtureJSON(fixture any) ([]byte, error) {
 	return json.Marshal(fixture)
 }
 
+func contractObjectFixture(value any, field, object string) contractFixture {
+	return contractFixture{value: value, json: `{"` + field + `":` + object + `}`}
+}
+
+func contractListFixture(value any, field, object string) contractFixture {
+	return contractFixture{value: value, json: `{"` + field + `":[` + object + `]}`}
+}
+
 const (
 	commentFixtureJSON     = `{"ID":"comment-1","Author":"reviewer","CreatedAt":"2026-08-19T12:01:00Z","Body":"Please review"}`
 	issueFixtureJSON       = `{"ID":"issue-1","Title":"First issue","ParentID":"parent-1","Repository":"origin","State":"Coding","CreatedAt":"2026-08-19T12:00:00Z","Body":"Implement it","Comments":[` + commentFixtureJSON + `],"BlockedBy":["issue-0"]}`
@@ -188,24 +190,30 @@ var contractDTOs = map[string]any{
 	"SaveSetupResponse": SaveSetupResponse{Setup: Setup{
 		Project: "demo", Repository: "origin", Organisation: "acme", Agent: "coder", Variants: []string{"fast", "safe"}, Complete: true,
 	}},
-	"ListEpicsResponse": contractFixture{
-		value: ListEpicsResponse{contractEpic},
-		json:  `[` + epicFixtureJSON + `]`,
-	},
-	"Epic": contractFixture{
-		value: contractEpic,
-		json:  epicFixtureJSON,
-	},
-	"CreateEpicRequest": CreateEpicRequest{
-		Title: "First epic", Assignee: "alice", Body: "Plan the release",
-		Repositories: []string{"origin", "secondary"}, BranchPrefix: "jira-123",
-	},
-	"TransitionEpicStateRequest": TransitionEpicStateRequest{State: "Review", Force: true},
-	"SetBranchPrefixRequest":     SetBranchPrefixRequest{Prefix: "EP-1"},
-	"CompleteEpicResponse":       CompleteEpicResponse{Completed: true},
-	"CreateIssueRequest": CreateIssueRequest{
-		ParentID: "parent-1", Title: "First issue", Body: "Implement it", Repository: "origin",
-	},
+	"ListEpicsRequest":        ListEpicsRequest{Project: "demo"},
+	"ListEpicsResponse":       contractListFixture(ListEpicsResponse{Epics: []Epic{contractEpic}}, "epics", epicFixtureJSON),
+	"GetEpicRequest":          GetEpicRequest{Project: "demo", Epic: "epic-1"},
+	"GetEpicResponse":         contractObjectFixture(GetEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"CreateEpicRequest":       CreateEpicRequest{Project: "demo", Title: "First epic", Description: "Plan the release"},
+	"CreateEpicResponse":      contractObjectFixture(CreateEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"PrefixEpicRequest":       PrefixEpicRequest{Project: "demo", Epic: "epic-1", Prefix: "EP-1"},
+	"PrefixEpicResponse":      contractObjectFixture(PrefixEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"TransitionEpicRequest":   TransitionEpicRequest{Project: "demo", Epic: "epic-1", Status: "in_progress"},
+	"TransitionEpicResponse":  contractObjectFixture(TransitionEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"CloseEpicRequest":        CloseEpicRequest{Project: "demo", Epic: "epic-1"},
+	"CloseEpicResponse":       contractObjectFixture(CloseEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
+	"ListIssuesRequest":       ListIssuesRequest{Project: "demo", Epic: "epic-1"},
+	"ListIssuesResponse":      contractListFixture(ListIssuesResponse{Issues: []Issue{contractIssue}}, "issues", issueFixtureJSON),
+	"GetIssueRequest":         GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
+	"GetIssueResponse":        contractObjectFixture(GetIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"CreateIssueRequest":      CreateIssueRequest{Project: "demo", Epic: "epic-1", Title: "First issue", Description: "Implement it"},
+	"CreateIssueResponse":     contractObjectFixture(CreateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"UpdateIssueRequest":      UpdateIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Updated issue", Description: "Updated details"},
+	"UpdateIssueResponse":     contractObjectFixture(UpdateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"TransitionIssueRequest":  TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
+	"TransitionIssueResponse": contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
+	"CloseIssueRequest":       CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
+	"CloseIssueResponse":      contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"CreatePullRequestRequest": contractFixture{
 		value: CreatePullRequestRequest{IssueID: "issue-1", Title: "Implement issue", Repository: "origin", Head: "feature/issue-1", Base: "main"},
 		json:  `{"issueId":"issue-1","title":"Implement issue","repository":"origin","head":"feature/issue-1","base":"main"}`,
@@ -231,36 +239,30 @@ var contractDTOs = map[string]any{
 	"GetOrganisationResponse": GetOrganisationResponse{Organisation: Organisation{
 		ID: "org-1", Name: "acme",
 	}},
-	"AgentSettings": contractFixture{
-		value: AgentSettings{SetupScript: "agents/setup.sh", Roles: map[string]AgentProfile{
-			"coding": {Agent: "coder", Variant: "fast", MaxRounds: 3},
-		}},
-		json: `{"SetupScript":"agents/setup.sh","Roles":{"coding":{"Agent":"coder","Variant":"fast","MaxRounds":3}}}`,
-	},
-	"SetAgentRoleRequest": SetAgentRoleRequest{Agent: "coder", Variant: "fast"},
-	"ListAgentRunsResponse": contractFixture{
-		value: ListAgentRunsResponse{{
-			ID: "run-1", ProjectID: 7, SandboxID: "sandbox-1", Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "failed", Round: 2, Error: "agent exited", Usage: RunUsage{TokensIn: 12, TokensOut: 34, CostUSD: 0.12}, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z"), FinishedAt: stringPointer("2026-08-19T12:02:00Z"),
-		}},
-		json: `[{"ID":"run-1","ProjectID":7,"SandboxID":"sandbox-1","Role":"coding","Subject":{"Kind":"issue","ID":"issue-1"},"Engine":"opencode","Agent":"coder","Variant":"fast","SessionMode":"fresh","Status":"failed","Round":2,"Error":"agent exited","Usage":{"TokensIn":12,"TokensOut":34,"CostUSD":0.12},"CreatedAt":"2026-08-19T12:00:00Z","StartedAt":"2026-08-19T12:00:01Z","FinishedAt":"2026-08-19T12:02:00Z"}]`,
-	},
-	"AgentRun": contractFixture{
-		value: AgentRun{ID: "run-1", ProjectID: 7, SandboxID: "sandbox-1", Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "running", Round: 2, Usage: RunUsage{TokensIn: 12, TokensOut: 34, CostUSD: 0.12}, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z")},
-		json:  `{"ID":"run-1","ProjectID":7,"SandboxID":"sandbox-1","Role":"coding","Subject":{"Kind":"issue","ID":"issue-1"},"Engine":"opencode","Agent":"coder","Variant":"fast","SessionMode":"fresh","Status":"running","Round":2,"Error":"","Usage":{"TokensIn":12,"TokensOut":34,"CostUSD":0.12},"CreatedAt":"2026-08-19T12:00:00Z","StartedAt":"2026-08-19T12:00:01Z","FinishedAt":null}`,
-	},
-	"RunOutputPage": contractFixture{
-		value: RunOutputPage{Entries: []TranscriptEntry{{Kind: 0, Tool: "", CallID: "call-1", Text: "finished step"}}, Next: 128},
-		json:  `{"Entries":[{"Kind":0,"Tool":"","CallID":"call-1","Text":"finished step"}],"Next":128}`,
-	},
-	"AgentActivityResponse": contractFixture{
-		value: AgentActivityResponse{Sizes: map[string]int64{"run-1": 128, "run-2": 256}},
-		json:  `{"sizes":{"run-1":128,"run-2":256}}`,
-	},
-	"CancelAgentRunResponse": CancelAgentRunResponse{Cancelled: true},
-	"ListSandboxesResponse": contractFixture{
-		value: ListSandboxesResponse{{ID: "sandbox-1", ProjectID: 7, Name: "demo-sandbox", Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Status: "running", CreatedAt: "2026-08-19T12:00:00Z", UpdatedAt: "2026-08-19T12:01:00Z"}},
-		json:  `[{"ID":"sandbox-1","ProjectID":7,"Name":"demo-sandbox","Role":"coding","Subject":{"Kind":"issue","ID":"issue-1"},"Status":"running","CreatedAt":"2026-08-19T12:00:00Z","UpdatedAt":"2026-08-19T12:01:00Z"}]`,
-	},
+	"GetAgentSettingsRequest": GetAgentSettingsRequest{Project: "demo"},
+	"GetAgentSettingsResponse": GetAgentSettingsResponse{Settings: []AgentSettings{{
+		Agent: "coder", Variant: "fast", Values: map[string]string{"model": "small", "temperature": "0.2"},
+	}}},
+	"ListAgentRunsRequest": ListAgentRunsRequest{Project: "demo"},
+	"ListAgentRunsResponse": ListAgentRunsResponse{Runs: []AgentRun{{
+		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "failed", SessionID: "session-1", Error: "agent exited", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
+	}}},
+	"ListSandboxesRequest": ListSandboxesRequest{},
+	"ListSandboxesResponse": ListSandboxesResponse{Sandboxes: []Sandbox{{
+		ID: "sandbox-1", Name: "demo-sandbox", Status: "ready", AgentRunID: "run-1",
+	}}},
+	"CancelAgentRunRequest": CancelAgentRunRequest{Run: "run-1"},
+	"CancelAgentRunResponse": CancelAgentRunResponse{Run: AgentRun{
+		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "cancelled", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
+	}},
+	"AgentActivityRequest": AgentActivityRequest{Run: "run-1"},
+	"AgentActivityResponse": AgentActivityResponse{Activity: []AgentActivity{{
+		RunID: "run-1", Status: "working", Message: "Writing code", UpdatedAt: "2026-08-19T12:01:00Z",
+	}}},
+	"RunOutputRequest": RunOutputRequest{Run: "run-1", Offset: 128},
+	"RunOutputResponse": RunOutputResponse{Output: RunOutput{
+		RunID: "run-1", Output: "finished step\n", Done: true,
+	}},
 	"CapabilitiesResponse": contractFixture{
 		value: CapabilitiesResponse{
 			"cancelAgentRun":        true,
@@ -281,27 +283,35 @@ var contractDTOs = map[string]any{
 	"AddRepositoryResponse": AddRepositoryResponse{Repository: Repository{
 		ID: "repo-1", Name: "donsy", Owner: "acme", URL: "https://example.test/donsy", Default: "main",
 	}},
+	"GetAgentRunRequest": GetAgentRunRequest{Run: "run-1"},
+	"GetAgentRunResponse": GetAgentRunResponse{Run: AgentRun{
+		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "complete", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
+	}},
+	"CompleteRequest":                CompleteRequest{Project: "demo", Run: "run-1"},
+	"CompleteResponse":               CompleteResponse{Complete: true},
+	"ReviewApprovedBranchesRequest":  ReviewApprovedBranchesRequest{Project: "demo"},
+	"ReviewApprovedBranchesResponse": ReviewApprovedBranchesResponse{Branches: []string{"main", "release"}},
+	"RunEpicRequest":                 RunEpicRequest{Project: "demo", Epic: "epic-1"},
+	"RunEpicResponse": RunEpicResponse{Run: AgentRun{
+		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
+	}},
 	"RunIssueRequest": RunIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
 	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
-		ID: "run-1", ProjectID: 7, Role: "coding", Subject: AgentSubject{Kind: "issue", ID: "issue-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "queued", Round: 1, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:00:01Z"),
+		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
 	}},
+	"ReconcileRequest":     ReconcileRequest{Project: "demo"},
+	"ReconcileResponse":    ReconcileResponse{Reconciled: 4},
+	"PurgeRequest":         PurgeRequest{Project: "demo"},
+	"PurgeResponse":        PurgeResponse{Purged: 2},
+	"ReadDaemonLogRequest": ReadDaemonLogRequest{Offset: 32, Limit: 4},
+	"ReadDaemonLogResponse": ReadDaemonLogResponse{
+		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
+	},
 	"ShapeBody": contractBodyFixture{Name: "new"},
 }
 
 var contractPathDTOs = map[string]any{
 	"ShapePath":                 contractPathFixture{Project: "demo/blue"},
-	"ProjectPath":               ProjectPath{ProjectID: 42},
-	"EpicPath":                  EpicPath{ProjectID: 42, EpicID: "epic/one"},
-	"GetAgentSettingsPath":      GetAgentSettingsPath{ProjectID: 7},
-	"SetAgentRolePath":          SetAgentRolePath{ProjectID: 7, Role: "coding/reviewer"},
-	"ListAgentRunsPath":         ListAgentRunsPath{ProjectID: 7},
-	"GetAgentRunPath":           GetAgentRunPath{RunID: "run/1"},
-	"RunOutputPath":             RunOutputPath{RunID: "run/1"},
-	"CancelAgentRunPath":        CancelAgentRunPath{RunID: "run/1"},
-	"ListSandboxesPath":         ListSandboxesPath{ProjectID: 7},
-	"CreateIssuePath":           CreateIssuePath{ProjectID: 42, EpicID: "epic-1"},
-	"CloseIssuePath":            CloseIssuePath{ProjectID: 42, EpicID: "epic-1", IssueID: "issue-1"},
-	"RunIssueAgentPath":         RunIssueAgentPath{ProjectID: 42, EpicID: "epic-1", IssueID: "issue-1"},
 	"CreatePullRequestPath":     CreatePullRequestPath{ProjectID: 7, EpicID: "epic-1"},
 	"TransitionPullRequestPath": TransitionPullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
 	"GrantCodingRoundPath":      GrantCodingRoundPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
@@ -313,22 +323,101 @@ var contractPathDTOs = map[string]any{
 }
 
 var contractQueryDTOs = map[string]url.Values{
-	"ShapeQuery":         {"runID": {"run-1", "run-2"}, "from": {"12"}},
-	"RunOutputQuery":     {"from": {"12"}},
-	"AgentActivityQuery": {"runID": {"run-1", "run-2"}},
+	"ShapeQuery": {"runID": {"run-1", "run-2"}, "from": {"12"}},
 }
 
-func stringPointer(value string) *string { return &value }
-
 func TestRepresentativeDTOJSON(t *testing.T) {
+	value := ReadDaemonLogResponse{Lines: []string{"first", "second"}, NextOffset: 24, OffsetReset: true}
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const want = `{"lines":["first","second"],"next_offset":24,"offset_reset":true}`
+	if string(encoded) != want {
+		t.Fatalf("ReadDaemonLogResponse JSON = %s, want %s", encoded, want)
+	}
+
 	request := CreateProjectRequest{Name: "demo", Description: "a project"}
-	encoded, err := json.Marshal(request)
+	encoded, err = json.Marshal(request)
 	if err != nil {
 		t.Fatal(err)
 	}
 	const wantRequest = `{"name":"demo","description":"a project"}`
 	if string(encoded) != wantRequest {
 		t.Fatalf("CreateProjectRequest JSON = %s, want %s", encoded, wantRequest)
+	}
+}
+
+func TestBoundDaemonLogRequest(t *testing.T) {
+	bounded, err := BoundDaemonLogRequest(ReadDaemonLogRequest{Offset: 8, Limit: MaxDaemonLogLines + 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bounded.Offset != 8 || bounded.Limit != MaxDaemonLogLines {
+		t.Fatalf("bounded request = %#v", bounded)
+	}
+
+	for _, test := range []struct {
+		name    string
+		request ReadDaemonLogRequest
+		want    error
+	}{
+		{name: "negative offset", request: ReadDaemonLogRequest{Offset: -1, Limit: 1}, want: ErrInvalidLogOffset},
+		{name: "zero limit", request: ReadDaemonLogRequest{Limit: 0}, want: ErrInvalidLogLimit},
+		{name: "negative limit", request: ReadDaemonLogRequest{Limit: -1}, want: ErrInvalidLogLimit},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := BoundDaemonLogRequest(test.request)
+			if !errors.Is(err, test.want) {
+				t.Fatalf("error = %v, want errors.Is(_, %v)", err, test.want)
+			}
+		})
+	}
+}
+
+func TestPageDaemonLog(t *testing.T) {
+	content := []byte("first\nsecond\nthird\npartial")
+
+	page, err := PageDaemonLog(content, ReadDaemonLogRequest{Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(page.Lines, []string{"first", "second"}) || page.NextOffset != int64(len("first\nsecond\n")) {
+		t.Fatalf("first page = %#v", page)
+	}
+
+	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Offset: page.NextOffset, Limit: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(page.Lines, []string{"third"}) || page.NextOffset != int64(len("first\nsecond\nthird\n")) {
+		t.Fatalf("second page = %#v", page)
+	}
+
+	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Offset: 999, Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !page.OffsetReset || page.NextOffset != int64(len("first\n")) {
+		t.Fatalf("reset page = %#v", page)
+	}
+
+	longLine := append(bytes.Repeat([]byte{'x'}, MaxDaemonLogBytes+1), '\n')
+	page, err = PageDaemonLog(longLine, ReadDaemonLogRequest{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(page.Lines) != 0 || page.NextOffset != int64(len(longLine)) {
+		t.Fatalf("oversized line page = lines %d, next %d", len(page.Lines), page.NextOffset)
+	}
+
+	content = append(longLine, []byte("kept\n")...)
+	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Limit: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(page.Lines, []string{"kept"}) || page.NextOffset != int64(len(content)) {
+		t.Fatalf("page after oversized line = %#v", page)
 	}
 }
 
