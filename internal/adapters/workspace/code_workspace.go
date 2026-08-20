@@ -122,6 +122,12 @@ func (w CodeWorkspace) open(checkout agent_runtime.CodeCheckout) (*git.Repositor
 	if err != nil {
 		return nil, "", fmt.Errorf("open checkout for issue %s: %w", checkout.IssueID, err)
 	}
+	// The sandbox can race a host operation by replacing metadata after the
+	// initial check. Recheck after go-git has opened the repository, before the
+	// caller uses its worktree or references.
+	if err := validateCheckout(path); err != nil {
+		return nil, "", fmt.Errorf("validate checkout for issue %s: %w", checkout.IssueID, err)
+	}
 	return repository, path, nil
 }
 

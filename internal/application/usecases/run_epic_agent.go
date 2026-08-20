@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/tinker-works/donsy/internal/application"
-	"github.com/tinker-works/donsy/internal/application/agent_runtime"
-	"github.com/tinker-works/donsy/internal/domain/agent"
-	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
+	"path/filepath"
 	"time"
 
+	"github.com/tinker-works/donsy/internal/application"
+	"github.com/tinker-works/donsy/internal/application/agent_runtime"
 	"github.com/tinker-works/donsy/internal/application/prompts"
 	"github.com/tinker-works/donsy/internal/domain"
+	"github.com/tinker-works/donsy/internal/domain/agent"
+	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
 	"github.com/tinker-works/donsy/internal/repositorypath"
 )
 
@@ -154,11 +155,18 @@ func (u *RunEpicAgentUseCase) Handle(ctx context.Context, command RunEpicAgentCo
 			return err
 		}
 		folder := repositorypath.Encode(repository)
-		command.Spec.Mounts = append(command.Spec.Mounts, agent_runtime.SandboxMount{
-			// Test commands write build outputs and test databases beside source.
-			// AgentWorkspace resets this disposable checkout before the next round.
-			HostLocation: path, GuestLocation: "/work/repos/" + folder, Writable: true,
-		})
+		guestPath := "/work/repos/" + folder
+		command.Spec.Mounts = append(command.Spec.Mounts,
+			agent_runtime.SandboxMount{
+				// Test commands write build outputs and test databases beside source.
+				// AgentWorkspace resets this disposable checkout before the next round.
+				HostLocation: path, GuestLocation: guestPath, Writable: true,
+			},
+			agent_runtime.SandboxMount{
+				HostLocation:  filepath.Join(path, ".git"),
+				GuestLocation: guestPath + "/.git",
+			},
+		)
 	}
 	round := u.round()
 	run, runCtx, finish, err := round.begin(ctx, &command.Spec, profile, next, runs)

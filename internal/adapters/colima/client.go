@@ -393,21 +393,43 @@ func sandboxStatusFor(name, state string) agent.SandboxStatus {
 }
 
 func isNoSuchContainer(err error, output []byte) bool {
-	text := strings.ToLower(err.Error() + " " + string(output))
-	return strings.Contains(text, "no such object") ||
-		strings.Contains(text, "no such container")
+	return isDockerNotFound(err, output, "no such object", "no such container")
 }
 
 func isNoSuchImage(err error) bool {
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "no such object") ||
-		strings.Contains(text, "no such image")
+	return isDockerNotFound(err, nil, "no such object", "no such image")
 }
 
 func isNoSuchVolume(err error) bool {
-	text := strings.ToLower(err.Error())
-	return strings.Contains(text, "no such object") ||
-		strings.Contains(text, "no such volume")
+	return isDockerNotFound(err, nil, "no such object", "no such volume")
+}
+
+// isDockerNotFound recognizes Docker's structured CLI error prefixes rather
+// than any error that happens to mention a not-found phrase. Treating a
+// permission or transport failure as absence would trigger a destructive
+// create, build, or prune operation.
+func isDockerNotFound(err error, output []byte, messages ...string) bool {
+	if err == nil {
+		return false
+	}
+	text := strings.ToLower(err.Error() + "\n" + string(output))
+	for _, line := range strings.Split(text, "\n") {
+		line = strings.TrimSpace(line)
+		for _, prefix := range []string{"error response from daemon:", "error:"} {
+			at := strings.Index(line, prefix)
+			if at < 0 {
+				continue
+			}
+			detail := strings.TrimSpace(line[at+len(prefix):])
+			for _, message := range messages {
+				if detail == message || strings.HasPrefix(detail, message+":") ||
+					strings.HasSuffix(detail, ": "+message) {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 func (c *Client) fingerprintMatches(

@@ -114,6 +114,25 @@ func TestClient_EnsureSessionVolume_ShouldPropagateANonNotFoundInspectError(t *t
 	}
 }
 
+func TestClient_EnsureSessionVolume_ShouldNotTreatAnUnrelatedNotFoundPhraseAsAbsence(t *testing.T) {
+	// Arrange: only Docker's own error response may authorize volume creation.
+	runner := newFakeRunner()
+	client := clientWith(t, runner)
+	runner.answer("docker --host "+dockerHost("gm-7")+" volume inspect",
+		response{err: fmt.Errorf("permission denied: no such volume: session")})
+
+	// Act
+	_, err := client.ensureSessionVolume(context.Background(), "gm-7", "session")
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected the inspect error to be propagated, got %v", err)
+	}
+	if runner.ran("volume", "create") {
+		t.Fatalf("expected no volume creation after an inspect failure: %v", runner.lines())
+	}
+}
+
 func TestCreateArgs_ShouldLimitMemoryWithoutLimitingCPU(t *testing.T) {
 	// Arrange
 	args := createArgs(testSpec(t), "image")

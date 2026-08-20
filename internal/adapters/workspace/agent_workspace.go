@@ -96,6 +96,9 @@ func (w AgentWorkspace) ensureLocked(
 		if err != nil {
 			return "", err
 		}
+		if err := validateCheckout(path); err != nil {
+			return "", err
+		}
 		worktree, err := repositoryHandle.Worktree()
 		if err != nil {
 			return "", err

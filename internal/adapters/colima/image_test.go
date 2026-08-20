@@ -129,6 +129,25 @@ func TestClient_EnsureImage_ShouldPropagateANonNotFoundInspectError(t *testing.T
 	}
 }
 
+func TestClient_EnsureImage_ShouldNotTreatAnUnrelatedNotFoundPhraseAsAbsence(t *testing.T) {
+	// Arrange: only Docker's own error response may authorize a rebuild.
+	runner := newFakeRunner()
+	client := clientWith(t, runner)
+	runner.answer("docker --host "+dockerHost("gm-7")+" image inspect",
+		response{err: fmt.Errorf("permission denied: no such image: agent")})
+
+	// Act
+	_, err := client.ensureImage(context.Background(), "gm-7", testSpec(t))
+
+	// Assert
+	if err == nil || !strings.Contains(err.Error(), "permission denied") {
+		t.Fatalf("expected the inspect error to be propagated, got %v", err)
+	}
+	if runner.ran("build") {
+		t.Fatalf("expected no image build after an inspect failure: %v", runner.lines())
+	}
+}
+
 // An image is keyed by everything baked into it, so bumping the pin adds an
 // image beside the old one rather than replacing it. Nothing will ever name the
 // old one again.

@@ -3,6 +3,7 @@ package usecases
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -336,12 +337,14 @@ func TestRunIssueAgentUseCase_ShouldMountTheRepositoryWritableAndReferencesReadO
 	if err := spec.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	var repo, tree, reference agent_runtime.SandboxMount
+	var repo, tree, reference, metadata agent_runtime.SandboxMount
 	var dockerSource agent_runtime.SandboxMount
 	for _, mount := range spec.Mounts {
 		switch mount.GuestLocation {
 		case "/work/repo":
 			repo = mount
+		case "/work/repo/.git":
+			metadata = mount
 		case "/work/issues":
 			tree = mount
 		case "/work/repos/acme__gadgets":
@@ -352,6 +355,9 @@ func TestRunIssueAgentUseCase_ShouldMountTheRepositoryWritableAndReferencesReadO
 	}
 	if !repo.Writable {
 		t.Fatal("expected the repository checkout to be writable")
+	}
+	if metadata.HostLocation != filepath.Join("/checkouts/repo", ".git") || metadata.Writable {
+		t.Fatalf("expected Git metadata mounted read-only, got %+v", metadata)
 	}
 	if tree.Writable {
 		t.Fatal("expected the issue tree to be read-only")
