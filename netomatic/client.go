@@ -140,6 +140,12 @@ func (c *HTTPClient) Process(ctx context.Context) (ProcessResponse, error) {
 	return response, err
 }
 
+func (c *HTTPClient) Capabilities(ctx context.Context) (CapabilitiesResponse, error) {
+	var response CapabilitiesResponse
+	err := c.do(ctx, MethodGet, APIPrefix+"/capabilities", true, nil, nil, &response, http.StatusOK)
+	return response, err
+}
+
 func (c *HTTPClient) ListProjects(ctx context.Context) (ListProjectsResponse, error) {
 	var response ListProjectsResponse
 	err := c.do(ctx, MethodGet, APIPrefix+"/projects", true, nil, nil, &response, http.StatusOK)
@@ -152,6 +158,12 @@ func (c *HTTPClient) CreateProject(ctx context.Context, request CreateProjectReq
 	return response, err
 }
 
+func (c *HTTPClient) ListProjectSummaries(ctx context.Context) (ListProjectSummariesResponse, error) {
+	var response ListProjectSummariesResponse
+	err := c.do(ctx, MethodGet, APIPrefix+"/projects/summaries", true, nil, nil, &response, http.StatusOK)
+	return response, err
+}
+
 func (c *HTTPClient) OpenProject(ctx context.Context, path ProjectPath) error {
 	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/open"
 	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
@@ -160,12 +172,6 @@ func (c *HTTPClient) OpenProject(ctx context.Context, path ProjectPath) error {
 func (c *HTTPClient) ForgetProject(ctx context.Context, path ProjectPath) error {
 	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10)
 	return c.do(ctx, MethodDelete, route, true, nil, nil, nil, http.StatusNoContent)
-}
-
-func (c *HTTPClient) ListProjectSummaries(ctx context.Context) (ListProjectSummariesResponse, error) {
-	var response ListProjectSummariesResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/projects/summaries", true, nil, nil, &response, http.StatusOK)
-	return response, err
 }
 
 func (c *HTTPClient) StoreSetup(ctx context.Context, path ProjectPath) (SetupState, error) {
@@ -180,88 +186,70 @@ func (c *HTTPClient) InitialiseStore(ctx context.Context, path ProjectPath, requ
 	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) ListEpics(ctx context.Context, request ListEpicsRequest) (ListEpicsResponse, error) {
+func (c *HTTPClient) ListEpics(ctx context.Context, path ProjectPath) (ListEpicsResponse, error) {
 	var response ListEpicsResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) GetEpic(ctx context.Context, request GetEpicRequest) (GetEpicResponse, error) {
-	var response GetEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) GetEpic(ctx context.Context, path EpicPath) (Epic, error) {
+	var response Epic
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID)
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) CreateEpic(ctx context.Context, request CreateEpicRequest) (CreateEpicResponse, error) {
-	var response CreateEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) CreateEpic(ctx context.Context, path EpicPath, request CreateEpicRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) CloseEpic(ctx context.Context, path EpicPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID)
+	return c.do(ctx, MethodDelete, route, true, nil, nil, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) TransitionEpicState(ctx context.Context, path EpicPath, request TransitionEpicStateRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/state-transitions"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) SetBranchPrefix(ctx context.Context, path EpicPath, request SetBranchPrefixRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/branch-prefix"
+	return c.do(ctx, MethodPut, route, true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) CompleteEpic(ctx context.Context, path EpicPath) (CompleteEpicResponse, error) {
+	var response CompleteEpicResponse
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/complete"
+	err := c.do(ctx, MethodPost, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) PrefixEpic(ctx context.Context, request PrefixEpicRequest) (PrefixEpicResponse, error) {
-	var response PrefixEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/prefix"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) ReviewApprovedBranches(ctx context.Context, path EpicPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/review-approved-branches"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) TransitionEpic(ctx context.Context, request TransitionEpicRequest) (TransitionEpicResponse, error) {
-	var response TransitionEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/transition"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) RunEpicAgent(ctx context.Context, path EpicPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/agent-runs"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) CloseEpic(ctx context.Context, request CloseEpicRequest) (CloseEpicResponse, error) {
-	var response CloseEpicResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/close"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) CreateIssue(ctx context.Context, path EpicPath, request CreateIssueRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/issues"
+	return c.do(ctx, MethodPost, route, true, nil, request, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) ListIssues(ctx context.Context, request ListIssuesRequest) (ListIssuesResponse, error) {
-	var response ListIssuesResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) CloseIssue(ctx context.Context, path IssuePath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/issues/" + escapePathSegment(path.IssueID)
+	return c.do(ctx, MethodDelete, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) GetIssue(ctx context.Context, request GetIssueRequest) (GetIssueResponse, error) {
-	var response GetIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) CreateIssue(ctx context.Context, request CreateIssueRequest) (CreateIssueResponse, error) {
-	var response CreateIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) UpdateIssue(ctx context.Context, request UpdateIssueRequest) (UpdateIssueResponse, error) {
-	var response UpdateIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue)
-	err := c.do(ctx, MethodPut, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) TransitionIssue(ctx context.Context, request TransitionIssueRequest) (TransitionIssueResponse, error) {
-	var response TransitionIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue) + "/transition"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) CloseIssue(ctx context.Context, request CloseIssueRequest) (CloseIssueResponse, error) {
-	var response CloseIssueResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/epics/" + escapePathSegment(request.Epic) + "/issues/" + escapePathSegment(request.Issue) + "/close"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) RunIssueAgent(ctx context.Context, path IssuePath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/epics/" + escapePathSegment(path.EpicID) + "/issues/" + escapePathSegment(path.IssueID) + "/agent-runs"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
 func (c *HTTPClient) CreatePullRequest(ctx context.Context, path CreatePullRequestPath, request CreatePullRequestRequest) error {
@@ -337,6 +325,12 @@ func (c *HTTPClient) ListRepositories(ctx context.Context) (ListRepositoriesResp
 	return response, err
 }
 
+func (c *HTTPClient) AddRepository(ctx context.Context, request AddRepositoryRequest) (AddRepositoryResponse, error) {
+	var response AddRepositoryResponse
+	err := c.do(ctx, MethodPost, APIPrefix+"/repositories", true, nil, request, &response, http.StatusCreated)
+	return response, err
+}
+
 func (c *HTTPClient) SyncRepositories(ctx context.Context) error {
 	return c.do(ctx, MethodPost, APIPrefix+"/repositories/sync", true, nil, nil, nil, http.StatusNoContent)
 }
@@ -353,114 +347,67 @@ func (c *HTTPClient) UpdateProjectRepositories(ctx context.Context, path UpdateP
 	return c.do(ctx, MethodPut, route, true, nil, request, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) GetAgentSettings(ctx context.Context, request GetAgentSettingsRequest) (GetAgentSettingsResponse, error) {
-	var response GetAgentSettingsResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/agent-settings"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) GetAgentSettings(ctx context.Context, path GetAgentSettingsPath) (AgentSettings, error) {
+	var response AgentSettings
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/agent-settings"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) ListAgentRuns(ctx context.Context, request ListAgentRunsRequest) (ListAgentRunsResponse, error) {
+func (c *HTTPClient) SetAgentRole(ctx context.Context, path SetAgentRolePath, request SetAgentRoleRequest) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/agent-settings/roles/" + escapePathSegment(path.Role)
+	return c.do(ctx, MethodPut, route, true, nil, request, nil, http.StatusNoContent)
+}
+
+func (c *HTTPClient) ListAgentRuns(ctx context.Context, path ListAgentRunsPath) (ListAgentRunsResponse, error) {
 	var response ListAgentRunsResponse
-	route := APIPrefix + "/projects/" + escapePathSegment(request.Project) + "/agent-runs"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/agent-runs"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) ListSandboxes(ctx context.Context, request ListSandboxesRequest) (ListSandboxesResponse, error) {
-	var response ListSandboxesResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/sandboxes", true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) GetAgentRun(ctx context.Context, path GetAgentRunPath) (AgentRun, error) {
+	var response AgentRun
+	route := APIPrefix + "/agent-runs/" + escapePathSegment(path.RunID)
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) CancelAgentRun(ctx context.Context, request CancelAgentRunRequest) (CancelAgentRunResponse, error) {
-	var response CancelAgentRunResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run) + "/cancel"
-	err := c.do(ctx, MethodPost, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) RunOutput(ctx context.Context, path RunOutputPath, query RunOutputQuery) (RunOutputPage, error) {
+	var response RunOutputPage
+	route := APIPrefix + "/agent-runs/" + escapePathSegment(path.RunID) + "/output"
+	err := c.do(ctx, MethodGet, route, true, query, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) AgentActivity(ctx context.Context, request AgentActivityRequest) (AgentActivityResponse, error) {
+func (c *HTTPClient) AgentActivity(ctx context.Context, query AgentActivityQuery) (AgentActivityResponse, error) {
 	var response AgentActivityResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run) + "/activity"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+	err := c.do(ctx, MethodGet, APIPrefix+"/agent-runs/activity", true, query, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) RunOutput(ctx context.Context, request RunOutputRequest) (RunOutputResponse, error) {
-	var response RunOutputResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run) + "/output"
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
+func (c *HTTPClient) CancelAgentRun(ctx context.Context, path CancelAgentRunPath) (CancelAgentRunResponse, error) {
+	var response CancelAgentRunResponse
+	route := APIPrefix + "/agent-runs/" + escapePathSegment(path.RunID) + "/cancel"
+	err := c.do(ctx, MethodPost, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) Capabilities(ctx context.Context) (CapabilitiesResponse, error) {
-	var response CapabilitiesResponse
-	err := c.do(ctx, MethodGet, APIPrefix+"/capabilities", true, nil, nil, &response, http.StatusOK)
+func (c *HTTPClient) ListSandboxes(ctx context.Context, path ListSandboxesPath) (ListSandboxesResponse, error) {
+	var response ListSandboxesResponse
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/sandboxes"
+	err := c.do(ctx, MethodGet, route, true, nil, nil, &response, http.StatusOK)
 	return response, err
 }
 
-func (c *HTTPClient) AddRepository(ctx context.Context, request AddRepositoryRequest) (AddRepositoryResponse, error) {
-	var response AddRepositoryResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/repositories", true, nil, request, &response, http.StatusCreated)
-	return response, err
+func (c *HTTPClient) ReconcileSandboxes(ctx context.Context, path ProjectPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/maintenance/reconcile"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
-func (c *HTTPClient) GetAgentRun(ctx context.Context, request GetAgentRunRequest) (GetAgentRunResponse, error) {
-	var response GetAgentRunResponse
-	route := APIPrefix + "/agent-runs/" + escapePathSegment(request.Run)
-	err := c.do(ctx, MethodGet, route, true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) Complete(ctx context.Context, request CompleteRequest) (CompleteResponse, error) {
-	var response CompleteResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/complete", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) ReviewApprovedBranches(ctx context.Context, request ReviewApprovedBranchesRequest) (ReviewApprovedBranchesResponse, error) {
-	var response ReviewApprovedBranchesResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/review-approved-branches", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) RunEpic(ctx context.Context, request RunEpicRequest) (RunEpicResponse, error) {
-	var response RunEpicResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/runs/epic", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) RunIssue(ctx context.Context, request RunIssueRequest) (RunIssueResponse, error) {
-	var response RunIssueResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/runs/issue", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) Reconcile(ctx context.Context, request ReconcileRequest) (ReconcileResponse, error) {
-	var response ReconcileResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/reconcile", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) Purge(ctx context.Context, request PurgeRequest) (PurgeResponse, error) {
-	var response PurgeResponse
-	err := c.do(ctx, MethodPost, APIPrefix+"/purge", true, nil, request, &response, http.StatusOK)
-	return response, err
-}
-
-func (c *HTTPClient) ReadDaemonLog(ctx context.Context, offset int64, limit int) (ReadDaemonLogResponse, error) {
-	var response ReadDaemonLogResponse
-	request, err := BoundDaemonLogRequest(ReadDaemonLogRequest{Offset: offset, Limit: limit})
-	if err != nil {
-		return response, err
-	}
-	query := url.Values{
-		"offset": {strconv.FormatInt(request.Offset, 10)},
-		"limit":  {strconv.Itoa(request.Limit)},
-	}
-	err = c.do(ctx, MethodGet, APIPrefix+"/daemon-log", true, query, nil, &response, http.StatusOK)
-	return response, err
+func (c *HTTPClient) PurgeFinishedWork(ctx context.Context, path ProjectPath) error {
+	route := APIPrefix + "/projects/" + strconv.FormatUint(uint64(path.ProjectID), 10) + "/maintenance/purge"
+	return c.do(ctx, MethodPost, route, true, nil, nil, nil, http.StatusNoContent)
 }
 
 var _ Client = (*HTTPClient)(nil)

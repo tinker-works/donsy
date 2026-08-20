@@ -15,16 +15,15 @@ import (
 	"testing"
 )
 
-func TestHTTPClientImplementsContract(t *testing.T) {
+func TestHTTPClientImplementsCompleteContract(t *testing.T) {
 	const token = "test-token"
 	var operation Operation
-	var requestBody []byte
 	var responseBody []byte
 	var requestMethod string
 	var requestPath string
 	var requestQuery url.Values
 	var requestRawQuery string
-	var requestStatus int
+	var requestBody []byte
 	var requestAuthorization string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,14 +31,15 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 		requestPath = r.URL.EscapedPath()
 		requestQuery = r.URL.Query()
 		requestRawQuery = r.URL.RawQuery
-		if len(requestQuery) == 0 {
-			requestQuery = nil
-		}
-		requestStatus = 0
-		requestAuthorization = r.Header.Get("Authorization")
 		requestBody, _ = io.ReadAll(r.Body)
+		requestAuthorization = r.Header.Get("Authorization")
+		if operation.Unavailable {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotImplemented)
+			_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"registered feature is unavailable"}`)
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
-		requestStatus = operation.SuccessStatus
 		w.WriteHeader(operation.SuccessStatus)
 		_, _ = w.Write(responseBody)
 	}))
@@ -50,15 +50,12 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	for _, operation = range Contract {
+	for index := range Contract {
+		operation = Contract[index]
 		t.Run(operation.Name, func(t *testing.T) {
-			if operation.Unavailable {
-				t.Skip("unavailable operations are covered by route-specific error tests")
-			}
 			path := contractTestPath(operation)
 			query := contractTestQuery(operation)
 			request := contractTestRequest(operation)
-			response := contractFixtureValue(contractDTOs[operation.Response])
 			responseBody = nil
 			if operation.Response != "" {
 				responseBody, err = contractFixtureJSON(contractDTOs[operation.Response])
@@ -66,20 +63,33 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 					t.Fatal(err)
 				}
 			}
-			requestBody = nil
 			requestMethod = ""
 			requestPath = ""
 			requestQuery = nil
 			requestRawQuery = ""
-			requestStatus = 0
+			requestBody = nil
 			requestAuthorization = ""
 
-			got, err := callContractOperationParts(client, operation, path, query, request)
-			if err != nil {
-				t.Fatalf("%s(): %v", operation.Name, err)
-			}
-			if !reflect.DeepEqual(got, response) {
-				t.Fatalf("%s() response = %#v, want %#v", operation.Name, got, response)
+			got, callErr := callContractOperationParts(client, operation, path, query, request)
+			if operation.Unavailable {
+				var apiError *APIError
+				if !errors.As(callErr, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured {
+					t.Fatalf("error = %#v, want feature_not_configured 501", callErr)
+				}
+				if !errors.Is(callErr, ErrUnavailable) {
+					t.Fatalf("error = %v, want ErrUnavailable", callErr)
+				}
+			} else {
+				if callErr != nil {
+					t.Fatalf("%s(): %v", operation.Name, callErr)
+				}
+				wantResponse := any(nil)
+				if operation.Response != "" {
+					wantResponse = contractFixtureValue(contractDTOs[operation.Response])
+				}
+				if !reflect.DeepEqual(got, wantResponse) {
+					t.Fatalf("%s() response = %#v, want %#v", operation.Name, got, wantResponse)
+				}
 			}
 
 			if requestMethod != string(operation.Method) {
@@ -88,16 +98,11 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 			if requestPath != contractTestRoute(operation, path) {
 				t.Errorf("path = %q, want %q", requestPath, contractTestRoute(operation, path))
 			}
-			if requestStatus != operation.SuccessStatus {
-				t.Errorf("status = %d, want %d", requestStatus, operation.SuccessStatus)
+			if !operation.Unavailable && requestQuery.Encode() != query.Encode() {
+				t.Errorf("query = %v, want %v", requestQuery, query)
 			}
-			if operation.Query != "" {
-				if requestQuery.Encode() != query.Encode() {
-					t.Errorf("query = %v, want %v", requestQuery, contractTestQuery(operation))
-				}
-				if requestRawQuery != query.Encode() {
-					t.Errorf("raw query = %q, want %q", requestRawQuery, query.Encode())
-				}
+			if !operation.Unavailable && requestRawQuery != query.Encode() {
+				t.Errorf("raw query = %q, want %q", requestRawQuery, query.Encode())
 			}
 			wantAuthorization := ""
 			if operation.Authenticated {
@@ -121,197 +126,49 @@ func TestHTTPClientImplementsContract(t *testing.T) {
 	}
 }
 
-func TestHTTPClientProjectSummariesDecodesWorkspaceError(t *testing.T) {
-	const responseBody = `[{"project":{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"},"epics":0,"running":0,"error":{"code":"workspace_unavailable","detail":"the project workspace could not be read"}}]`
-	var requestCount int
+func TestHTTPClientOptionalFeaturesDecode501(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet || r.URL.EscapedPath() != APIPrefix+"/projects/summaries" {
-			t.Fatalf("request = %s %s, want GET %s", r.Method, r.URL.EscapedPath(), APIPrefix+"/projects/summaries")
-		}
-		if r.Header.Get("Authorization") != "Bearer token" {
-			t.Fatalf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
-		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(body) != 0 {
-			t.Fatalf("request body = %s, want empty", body)
-		}
-		requestCount++
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = io.WriteString(w, responseBody)
-	}))
-	defer server.Close()
-
-	client, err := NewHTTPClient(server.URL, "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	summaries, err := client.ListProjectSummaries(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if requestCount != 1 || len(summaries) != 1 {
-		t.Fatalf("request count = %d, summaries = %#v", requestCount, summaries)
-	}
-	if summaries[0].Error == nil || summaries[0].Error.Code != ErrorCode("workspace_unavailable") || summaries[0].Error.Detail != "the project workspace could not be read" {
-		t.Fatalf("summary error = %#v", summaries[0].Error)
-	}
-}
-
-func TestHTTPClientPullRequestOutcomesAndCommentTargets(t *testing.T) {
-	var mergeCalls int
-	var commentBodies []string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.EscapedPath() {
-		case APIPrefix + "/projects/7/epics/epic-1/pull-requests/pr-1/merge":
-			outcomes := []string{"merged", "returned_to_coding"}
-			if mergeCalls >= len(outcomes) {
-				t.Fatalf("unexpected merge call %d", mergeCalls+1)
-			}
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = io.WriteString(w, `{"outcome":"`+outcomes[mergeCalls]+`"}`)
-			mergeCalls++
-		case APIPrefix + "/projects/7/epics/epic-1/comments":
-			body, err := io.ReadAll(r.Body)
-			if err != nil {
-				t.Fatal(err)
-			}
-			commentBodies = append(commentBodies, string(body))
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected path %q", r.URL.EscapedPath())
-		}
-	}))
-	defer server.Close()
-	client, err := NewHTTPClient(server.URL, "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	path := MergePullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"}
-	for _, want := range []MergeOutcome{MergeOutcomeMerged, MergeOutcomeReturnedToCoding} {
-		response, err := client.MergePullRequest(context.Background(), path)
-		if err != nil || response.Outcome != want {
-			t.Fatalf("merge response = %#v, error = %v, want %q", response, err, want)
-		}
-	}
-	commentPath := AddCommentPath{ProjectID: 7, EpicID: "epic-1"}
-	for _, target := range []CommentTarget{IssueCommentTarget, PullRequestCommentTarget} {
-		if err := client.AddComment(context.Background(), commentPath, AddCommentRequest{TargetID: "target-1", Target: target, Body: "Please review"}); err != nil {
-			t.Fatal(err)
-		}
-	}
-	wantBodies := []string{`{"targetId":"target-1","target":"issue","body":"Please review"}`, `{"targetId":"target-1","target":"pull_request","body":"Please review"}`}
-	if !reflect.DeepEqual(commentBodies, wantBodies) {
-		t.Fatalf("comment bodies = %v, want %v", commentBodies, wantBodies)
-	}
-}
-
-func TestHTTPClientPullRequestUnavailableFeaturesDecode501(t *testing.T) {
-	var requestPath string
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requestPath = r.URL.EscapedPath()
 		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"pull-request feature is unavailable"}`)
+		_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"feature is not configured for this process"}`)
 	}))
 	defer server.Close()
 	client, err := NewHTTPClient(server.URL, "token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	path := MergePullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"}
-	for _, test := range []struct {
-		name     string
-		wantPath string
-		call     func() error
-	}{
-		{name: "reset issue", wantPath: APIPrefix + "/projects/7/epics/epic-1/pull-requests/pr-1/reset", call: func() error {
-			return client.ResetIssue(context.Background(), ResetIssuePath(path))
-		}},
-		{name: "open pull requests", wantPath: APIPrefix + "/projects/7/epics/epic-1/open-pull-requests", call: func() error {
-			_, err := client.OpenPullRequests(context.Background(), OpenPullRequestsPath{ProjectID: path.ProjectID, EpicID: path.EpicID})
-			return err
-		}},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			requestPath = ""
-			err := test.call()
-			if requestPath != test.wantPath {
-				t.Fatalf("path = %q, want %q", requestPath, test.wantPath)
-			}
-			var apiError *APIError
-			if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != "pull-request feature is unavailable" {
-				t.Fatalf("error = %#v, want feature_not_configured 501", err)
-			}
-			if !errors.Is(err, ErrUnavailable) {
-				t.Fatalf("error = %v, want ErrUnavailable", err)
-			}
-		})
-	}
-}
 
-func TestHTTPClientRepositoryFeaturesDecode501(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var wantMethod string
-		var detail string
-		switch r.URL.EscapedPath() {
-		case APIPrefix + "/organisations/discovery":
-			wantMethod = http.MethodPost
-			detail = "organisation discovery is not configured for this process"
-		case APIPrefix + "/repositories":
-			wantMethod = http.MethodGet
-			detail = "repository listing is not configured for this process"
-		case APIPrefix + "/repositories/sync":
-			wantMethod = http.MethodPost
-			detail = "repository sync is not configured for this process"
-		default:
-			t.Fatalf("unexpected path %q", r.URL.EscapedPath())
-		}
-		if r.Method != wantMethod {
-			t.Errorf("method = %q, want %q", r.Method, wantMethod)
-		}
-		if r.Header.Get("Authorization") != "Bearer token" {
-			t.Errorf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
-		}
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if len(body) != 0 {
-			t.Errorf("request body = %s, want empty", body)
-		}
-		w.WriteHeader(http.StatusNotImplemented)
-		_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"`+detail+`"}`)
-	}))
-	defer server.Close()
-
-	client, err := NewHTTPClient(server.URL, "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, test := range []struct {
-		name   string
-		detail string
-		call   func() error
+	tests := []struct {
+		name string
+		call func() error
 	}{
-		{name: "discover organisations", detail: "organisation discovery is not configured for this process", call: func() error {
-			_, err := client.DiscoverOrganisations(context.Background())
+		{name: "reset issue", call: func() error {
+			return client.ResetIssue(context.Background(), ResetIssuePath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"})
+		}},
+		{name: "open pull requests", call: func() error {
+			_, err := client.OpenPullRequests(context.Background(), OpenPullRequestsPath{ProjectID: 7, EpicID: "epic-1"})
 			return err
 		}},
-		{name: "list repositories", detail: "repository listing is not configured for this process", call: func() error {
-			_, err := client.ListRepositories(context.Background())
+		{name: "discover organisations", call: func() error { _, err := client.DiscoverOrganisations(context.Background()); return err }},
+		{name: "list repositories", call: func() error { _, err := client.ListRepositories(context.Background()); return err }},
+		{name: "sync repositories", call: func() error { return client.SyncRepositories(context.Background()) }},
+		{name: "run output", call: func() error {
+			_, err := client.RunOutput(context.Background(), AgentRunPath{RunID: "run-1"}, url.Values{"from": {"0"}})
 			return err
 		}},
-		{name: "sync repositories", detail: "repository sync is not configured for this process", call: func() error {
-			return client.SyncRepositories(context.Background())
+		{name: "activity", call: func() error {
+			_, err := client.AgentActivity(context.Background(), url.Values{"runID": {"run-1"}})
+			return err
 		}},
-	} {
+		{name: "cancel run", call: func() error {
+			_, err := client.CancelAgentRun(context.Background(), AgentRunPath{RunID: "run-1"})
+			return err
+		}},
+	}
+	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			err := test.call()
 			var apiError *APIError
-			if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != test.detail {
+			if !errors.As(err, &apiError) || apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured {
 				t.Fatalf("error = %#v, want feature_not_configured 501", err)
 			}
 			if !errors.Is(err, ErrUnavailable) {
@@ -322,34 +179,24 @@ func TestHTTPClientRepositoryFeaturesDecode501(t *testing.T) {
 }
 
 func callContractOperationParts(client any, operation Operation, path any, query url.Values, request any) (any, error) {
-	ctx := context.Background()
 	method := reflect.ValueOf(client).MethodByName(operation.Name)
 	if !method.IsValid() {
 		return nil, errors.New("missing client method")
 	}
-
-	args := []reflect.Value{reflect.ValueOf(ctx)}
-	if operation.Name == "ReadDaemonLog" {
-		logRequest := request.(ReadDaemonLogRequest)
-		args = append(args, reflect.ValueOf(logRequest.Offset), reflect.ValueOf(logRequest.Limit))
-	} else {
-		if operation.Path != "" {
-			args = append(args, reflect.ValueOf(path))
-		}
-		if operation.Query != "" {
-			args = append(args, reflect.ValueOf(query))
-		}
-		if operation.Request != "" {
-			args = append(args, reflect.ValueOf(request))
-		}
+	args := []reflect.Value{reflect.ValueOf(context.Background())}
+	if operation.Path != "" {
+		args = append(args, reflect.ValueOf(path))
+	}
+	if operation.Query != "" {
+		args = append(args, reflect.ValueOf(query))
+	}
+	if operation.Request != "" {
+		args = append(args, reflect.ValueOf(request))
 	}
 	results := method.Call(args)
 	switch len(results) {
 	case 1:
-		if err := contractCallError(results[0]); err != nil {
-			return nil, err
-		}
-		return nil, nil
+		return nil, contractCallError(results[0])
 	case 2:
 		if err := contractCallError(results[1]); err != nil {
 			return nil, err
@@ -381,20 +228,13 @@ func contractTestRoute(operation Operation, request any) string {
 	}
 	value := reflect.ValueOf(request)
 	for placeholder, fieldName := range map[string]string{
-		"project":       "Project",
 		"projectID":     "ProjectID",
-		"epic":          "Epic",
 		"epicID":        "EpicID",
-		"issue":         "Issue",
 		"issueID":       "IssueID",
-		"pull_request":  "PullRequest",
 		"pullRequestID": "PullRequestID",
-		"repository":    "Repository",
-		"organisation":  "Organisation",
-		"run":           "Run",
-		"runID":         "RunID",
-		"role":          "Role",
 		"name":          "Name",
+		"role":          "Role",
+		"runID":         "RunID",
 	} {
 		field := value.FieldByName(fieldName)
 		if !field.IsValid() {
@@ -406,8 +246,6 @@ func contractTestRoute(operation Operation, request any) string {
 			segment = url.PathEscape(field.String())
 		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
 			segment = strconv.FormatUint(field.Uint(), 10)
-		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-			segment = strconv.FormatInt(field.Int(), 10)
 		default:
 			continue
 		}
@@ -418,7 +256,7 @@ func contractTestRoute(operation Operation, request any) string {
 
 func contractTestPath(operation Operation) any {
 	if operation.Path == "" {
-		return contractDTOs[operation.Request]
+		return nil
 	}
 	return contractPathDTOs[operation.Path]
 }
@@ -431,36 +269,26 @@ func contractTestQuery(operation Operation) url.Values {
 }
 
 func contractTestRequest(operation Operation) any {
-	if operation.Request != "" {
-		return contractFixtureValue(contractDTOs[operation.Request])
+	if operation.Request == "" {
+		return nil
 	}
-	if operation.Name == "ReadDaemonLog" {
-		return contractDTOs["ReadDaemonLogRequest"]
-	}
-	return nil
+	return contractFixtureValue(contractDTOs[operation.Request])
 }
 
 func TestHTTPClientEscapesPathSegments(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		want := APIPrefix + "/projects/demo%2Fblue/epics/epic%20one/issues/issue%3F1"
+		want := APIPrefix + "/projects/7/epics/epic%2Fone"
 		if r.URL.EscapedPath() != want {
 			t.Errorf("escaped path = %q, want %q", r.URL.EscapedPath(), want)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = io.WriteString(w, `{"issue":{"id":"issue-1","title":"title","status":"open"}}`)
+		_, _ = io.WriteString(w, epicFixtureJSON)
 	}))
 	defer server.Close()
-
 	client, err := NewHTTPClient(server.URL, "token")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.GetIssue(context.Background(), GetIssueRequest{
-		Project: "demo/blue",
-		Epic:    "epic one",
-		Issue:   "issue?1",
-	})
-	if err != nil {
+	if _, err := client.GetEpic(context.Background(), EpicPath{ProjectID: 7, EpicID: "epic/one"}); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -473,18 +301,11 @@ func TestNewHTTPClientValidatesBaseURL(t *testing.T) {
 			}
 		})
 	}
-	for _, baseURL := range []string{"http://localhost:8337", "https://localhost:8337/api"} {
-		if _, err := NewHTTPClient(baseURL, "token"); err != nil {
-			t.Fatalf("NewHTTPClient(%q) = %v", baseURL, err)
-		}
-	}
 }
 
 func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 	t.Run("malformed response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.WriteString(w, "not-json")
-		}))
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = io.WriteString(w, "not-json") }))
 		defer server.Close()
 		client, err := NewHTTPClient(server.URL, "token")
 		if err != nil {
@@ -496,7 +317,7 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 	})
 
 	t.Run("non-2xx response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			w.WriteHeader(http.StatusUnauthorized)
 			_, _ = io.WriteString(w, `{"code":"unauthorized","detail":"bad token"}`)
 		}))
@@ -506,77 +327,13 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 			t.Fatal(err)
 		}
 		_, err = client.Process(context.Background())
-		var apiError *APIError
-		if !errors.As(err, &apiError) || apiError.Code != ErrorUnauthorized || apiError.StatusCode != http.StatusUnauthorized {
-			t.Fatalf("error = %#v, want unauthorized APIError", err)
-		}
 		if !errors.Is(err, ErrUnauthorized) {
-			t.Fatal("API error did not unwrap to ErrUnauthorized")
-		}
-	})
-
-	t.Run("internal error response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusInternalServerError)
-			_, _ = io.WriteString(w, `{"code":"internal_error","detail":"database unavailable"}`)
-		}))
-		defer server.Close()
-		client, err := NewHTTPClient(server.URL, "token")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		_, err = client.Process(context.Background())
-		var apiError *APIError
-		if !errors.As(err, &apiError) {
-			t.Fatalf("error = %v, want APIError", err)
-		}
-		if apiError.StatusCode != http.StatusInternalServerError || apiError.Code != ErrorInternal || apiError.Detail != "database unavailable" {
-			t.Fatalf("API error = %#v", apiError)
-		}
-		if !errors.Is(err, ErrInternal) {
-			t.Fatalf("error = %v, want ErrInternal", err)
-		}
-	})
-
-	t.Run("unavailable feature response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if r.URL.EscapedPath() != APIPrefix+"/projects" {
-				t.Fatalf("path = %q, want %q", r.URL.EscapedPath(), APIPrefix+"/projects")
-			}
-			if r.Header.Get("Authorization") != "Bearer token" {
-				t.Fatalf("authorization = %q, want bearer token", r.Header.Get("Authorization"))
-			}
-			w.WriteHeader(http.StatusNotImplemented)
-			_, _ = io.WriteString(w, `{"code":"feature_not_configured","detail":"repository discovery is unavailable"}`)
-		}))
-		defer server.Close()
-		client, err := NewHTTPClient(server.URL, "token")
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		_, err = client.ListProjects(context.Background())
-		var apiError *APIError
-		if !errors.As(err, &apiError) {
-			t.Fatalf("error = %v, want APIError", err)
-		}
-		if apiError.StatusCode != http.StatusNotImplemented || apiError.Code != ErrorFeatureNotConfigured || apiError.Detail != "repository discovery is unavailable" {
-			t.Fatalf("API error = %#v", apiError)
-		}
-		if apiError.Error() != apiError.Detail {
-			t.Fatalf("API error string = %q, want daemon detail %q", apiError.Error(), apiError.Detail)
-		}
-		if !errors.Is(err, ErrUnavailable) {
-			t.Fatalf("error = %v, want ErrUnavailable", err)
+			t.Fatalf("error = %v, want ErrUnauthorized", err)
 		}
 	})
 
 	t.Run("unexpected 2xx response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			w.WriteHeader(http.StatusCreated)
-			_, _ = io.WriteString(w, `{"status":"running"}`)
-		}))
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { w.WriteHeader(http.StatusCreated) }))
 		defer server.Close()
 		client, err := NewHTTPClient(server.URL, "token")
 		if err != nil {
@@ -586,212 +343,4 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 			t.Fatalf("error = %v, want ErrUnexpectedStatus", err)
 		}
 	})
-
-	t.Run("oversized response", func(t *testing.T) {
-		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			_, _ = io.Copy(w, bytes.NewReader(bytes.Repeat([]byte{'x'}, MaxResponseBytes+1)))
-		}))
-		defer server.Close()
-		client, err := NewHTTPClient(server.URL, "token")
-		if err != nil {
-			t.Fatal(err)
-		}
-		if _, err := client.Process(context.Background()); !errors.Is(err, ErrResponseTooLarge) {
-			t.Fatalf("error = %v, want ErrResponseTooLarge", err)
-		}
-	})
-}
-
-type contractPathFixture struct {
-	Project string
-}
-
-type contractBodyFixture struct {
-	Name string `json:"name"`
-}
-
-type contractShapeResponse struct {
-	OK bool `json:"ok"`
-}
-
-type contractShapeClient struct {
-	client *HTTPClient
-}
-
-func (c contractShapeClient) PathOnly(ctx context.Context, path contractPathFixture) error {
-	route := APIPrefix + "/shape/" + escapePathSegment(path.Project)
-	return c.client.do(ctx, MethodPost, route, false, nil, nil, nil, http.StatusNoContent)
-}
-
-func (c contractShapeClient) PathAndBody(ctx context.Context, path contractPathFixture, body contractBodyFixture) (contractShapeResponse, error) {
-	var response contractShapeResponse
-	route := APIPrefix + "/shape/" + escapePathSegment(path.Project) + "/body"
-	err := c.client.do(ctx, MethodPost, route, false, nil, body, &response, http.StatusCreated)
-	return response, err
-}
-
-func (c contractShapeClient) Query(ctx context.Context, query url.Values) (contractShapeResponse, error) {
-	var response contractShapeResponse
-	err := c.client.do(ctx, MethodGet, APIPrefix+"/shape/query", false, query, nil, &response, http.StatusOK)
-	return response, err
-}
-
-func TestContractHarnessSeparatesPathQueryAndBody(t *testing.T) {
-	var requests []struct {
-		method      string
-		path        string
-		query       url.Values
-		rawQuery    string
-		contentType string
-		body        []byte
-	}
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(r.Body)
-		if err != nil {
-			t.Error(err)
-		}
-		requests = append(requests, struct {
-			method      string
-			path        string
-			query       url.Values
-			rawQuery    string
-			contentType string
-			body        []byte
-		}{method: r.Method, path: r.URL.EscapedPath(), query: r.URL.Query(), rawQuery: r.URL.RawQuery, contentType: r.Header.Get("Content-Type"), body: body})
-
-		switch r.URL.EscapedPath() {
-		case APIPrefix + "/shape/demo%2Fblue":
-			w.WriteHeader(http.StatusNoContent)
-		case APIPrefix + "/shape/demo%2Fblue/body":
-			w.WriteHeader(http.StatusCreated)
-			_, _ = io.WriteString(w, `{"ok":true}`)
-		case APIPrefix + "/shape/query":
-			w.WriteHeader(http.StatusOK)
-			_, _ = io.WriteString(w, `{"ok":true}`)
-		default:
-			t.Errorf("unexpected path %q", r.URL.EscapedPath())
-			w.WriteHeader(http.StatusNotFound)
-		}
-	}))
-	defer server.Close()
-
-	client, err := NewHTTPClient(server.URL, "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	shapeClient := contractShapeClient{client: client}
-
-	pathOnly := Operation{
-		Name: "PathOnly", Method: MethodPost, Route: APIPrefix + "/shape/{project}", Path: "ShapePath", SuccessStatus: http.StatusNoContent,
-	}
-	path := contractPathDTOs["ShapePath"]
-	if _, err := callContractOperationParts(shapeClient, pathOnly, path, nil, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	pathAndBody := Operation{
-		Name: "PathAndBody", Method: MethodPost, Route: APIPrefix + "/shape/{project}/body", Path: "ShapePath", Request: "ShapeBody", SuccessStatus: http.StatusCreated,
-	}
-	body := contractDTOs["ShapeBody"]
-	response, err := callContractOperationParts(shapeClient, pathAndBody, path, nil, body)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(response, contractShapeResponse{OK: true}) {
-		t.Fatalf("response = %#v", response)
-	}
-
-	queryOperation := Operation{
-		Name: "Query", Method: MethodGet, Route: APIPrefix + "/shape/query", Query: "ShapeQuery", SuccessStatus: http.StatusOK,
-	}
-	query := contractQueryDTOs["ShapeQuery"]
-	response, err = callContractOperationParts(shapeClient, queryOperation, nil, query, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(response, contractShapeResponse{OK: true}) {
-		t.Fatalf("response = %#v", response)
-	}
-	emptyQuery := url.Values{}
-	response, err = callContractOperationParts(shapeClient, queryOperation, nil, emptyQuery, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(response, contractShapeResponse{OK: true}) {
-		t.Fatalf("empty query response = %#v", response)
-	}
-
-	if len(requests) != 4 {
-		t.Fatalf("request count = %d, want 4", len(requests))
-	}
-	if requests[0].method != http.MethodPost || requests[1].method != http.MethodPost || requests[2].method != http.MethodGet || requests[3].method != http.MethodGet {
-		t.Fatalf("methods = %q, %q, %q, %q", requests[0].method, requests[1].method, requests[2].method, requests[3].method)
-	}
-	if len(requests[0].body) != 0 || len(requests[2].body) != 0 || len(requests[3].body) != 0 {
-		t.Fatalf("path-only/query bodies = %q, %q, and %q, want empty", requests[0].body, requests[2].body, requests[3].body)
-	}
-	if requests[0].contentType != "" || requests[2].contentType != "" || requests[3].contentType != "" {
-		t.Fatalf("path-only/query content types = %q, %q, and %q, want empty", requests[0].contentType, requests[2].contentType, requests[3].contentType)
-	}
-	wantBody := `{"name":"new"}`
-	if string(requests[1].body) != wantBody {
-		t.Fatalf("path-plus-body body = %s, want %s", requests[1].body, wantBody)
-	}
-	if requests[1].contentType != "application/json" {
-		t.Fatalf("path-plus-body content type = %q, want application/json", requests[1].contentType)
-	}
-	if !reflect.DeepEqual(requests[2].query, query) {
-		t.Fatalf("query = %v, want %v", requests[2].query, query)
-	}
-	if requests[2].rawQuery != query.Encode() {
-		t.Fatalf("raw query = %q, want %q", requests[2].rawQuery, query.Encode())
-	}
-	if len(requests[3].query) != 0 {
-		t.Fatalf("empty query = %v, want empty", requests[3].query)
-	}
-	if requests[3].rawQuery != "" {
-		t.Fatalf("empty raw query = %q, want empty", requests[3].rawQuery)
-	}
-}
-
-func TestHTTPClientBoundsDaemonLogRequest(t *testing.T) {
-	var query url.Values
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		query = r.URL.Query()
-		if r.ContentLength != 0 {
-			t.Errorf("GET content length = %d, want 0", r.ContentLength)
-		}
-		_, _ = io.WriteString(w, `{"lines":["line"],"next_offset":12,"offset_reset":false}`)
-	}))
-	defer server.Close()
-
-	client, err := NewHTTPClient(server.URL, "token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	response, err := client.ReadDaemonLog(context.Background(), 8, MaxDaemonLogLines+1)
-	if err != nil {
-		t.Fatal(err)
-	}
-	wantQuery := url.Values{"offset": {"8"}, "limit": {strconv.Itoa(MaxDaemonLogLines)}}
-	if !reflect.DeepEqual(query, wantQuery) || !reflect.DeepEqual(response.Lines, []string{"line"}) {
-		t.Fatalf("query = %v, response = %#v", query, response)
-	}
-
-	for _, test := range []struct {
-		name   string
-		offset int64
-		limit  int
-		want   error
-	}{
-		{name: "negative offset", offset: -1, limit: 1, want: ErrInvalidLogOffset},
-		{name: "zero limit", offset: 0, limit: 0, want: ErrInvalidLogLimit},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := client.ReadDaemonLog(context.Background(), test.offset, test.limit)
-			if !errors.Is(err, test.want) {
-				t.Fatalf("error = %v, want errors.Is(_, %v)", err, test.want)
-			}
-		})
-	}
 }

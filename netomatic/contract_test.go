@@ -1,63 +1,98 @@
 package netomatic
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
+	"net/http"
 	"net/url"
 	"reflect"
 	"testing"
 )
 
-func TestContractIsComplete(t *testing.T) {
+func TestContractMatchesGoMergeRouteInventory(t *testing.T) {
+	want := []Operation{
+		{Name: "Process", Method: MethodGet, Route: APIPrefix + "/process", Response: "ProcessResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "Capabilities", Method: MethodGet, Route: APIPrefix + "/capabilities", Response: "CapabilitiesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "ListProjects", Method: MethodGet, Route: APIPrefix + "/projects", Response: "ListProjectsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "CreateProject", Method: MethodPost, Route: APIPrefix + "/projects", Request: "CreateProjectRequest", Response: "CreateProjectResponse", SuccessStatus: http.StatusCreated, Authenticated: true},
+		{Name: "ListProjectSummaries", Method: MethodGet, Route: APIPrefix + "/projects/summaries", Response: "ListProjectSummariesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "OpenProject", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/open", Path: "ProjectPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "ForgetProject", Method: MethodDelete, Route: APIPrefix + "/projects/{projectID}", Path: "ProjectPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "StoreSetup", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/setup", Path: "ProjectPath", Response: "SetupState", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "InitialiseStore", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/setup", Path: "ProjectPath", Request: "InitialiseStoreRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "ListEpics", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics", Path: "ProjectPath", Response: "ListEpicsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "GetEpic", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}", Path: "EpicPath", Response: "Epic", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "CreateEpic", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics", Path: "EpicPath", Request: "CreateEpicRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "CloseEpic", Method: MethodDelete, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}", Path: "EpicPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "TransitionEpicState", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/state-transitions", Path: "EpicPath", Request: "TransitionEpicStateRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "SetBranchPrefix", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/branch-prefix", Path: "EpicPath", Request: "SetBranchPrefixRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "CompleteEpic", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/complete", Path: "EpicPath", Response: "CompleteEpicResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "ReviewApprovedBranches", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/review-approved-branches", Path: "EpicPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "RunEpicAgent", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/agent-runs", Path: "EpicPath", Unavailable: true, Authenticated: true},
+		{Name: "CreateIssue", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/issues", Path: "CreateIssuePath", Request: "CreateIssueRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "CloseIssue", Method: MethodDelete, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/issues/{issueID}", Path: "CloseIssuePath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "RunIssueAgent", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/issues/{issueID}/agent-runs", Path: "RunIssueAgentPath", Unavailable: true, Authenticated: true},
+		{Name: "CreatePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests", Path: "CreatePullRequestPath", Request: "CreatePullRequestRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "TransitionPullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/state-transitions", Path: "TransitionPullRequestPath", Request: "TransitionPullRequestRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "GrantCodingRound", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/coding-rounds", Path: "GrantCodingRoundPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "MergePullRequest", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/merge", Path: "MergePullRequestPath", Response: "MergePullRequestResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "ResetIssue", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/reset", Path: "ResetIssuePath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "GetPullRequestDiff", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/diff", Path: "GetPullRequestDiffPath", Response: "PullRequestDiffResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "OpenPullRequests", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/open-pull-requests", Path: "OpenPullRequestsPath", Response: "OpenPullRequestsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "AddComment", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/epics/{epicID}/comments", Path: "AddCommentPath", Request: "AddCommentRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "ListOrganisations", Method: MethodGet, Route: APIPrefix + "/organisations", Response: "ListOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "AddOrganisation", Method: MethodPost, Route: APIPrefix + "/organisations", Request: "AddOrganisationRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "RemoveOrganisation", Method: MethodDelete, Route: APIPrefix + "/organisations/{name}", Path: "RemoveOrganisationPath", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "DiscoverOrganisations", Method: MethodPost, Route: APIPrefix + "/organisations/discovery", Response: "DiscoverOrganisationsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "ListRepositories", Method: MethodGet, Route: APIPrefix + "/repositories", Response: "ListRepositoriesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "AddRepository", Method: MethodPost, Route: APIPrefix + "/repositories", Request: "AddRepositoryRequest", Response: "Repository", SuccessStatus: http.StatusCreated, Authenticated: true},
+		{Name: "SyncRepositories", Method: MethodPost, Route: APIPrefix + "/repositories/sync", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "ListProjectRepositories", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/repositories", Path: "ListProjectRepositoriesPath", Response: "ListProjectRepositoriesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "UpdateProjectRepositories", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/repositories", Path: "UpdateProjectRepositoriesPath", Request: "UpdateProjectRepositoriesRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "GetAgentSettings", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/agent-settings", Path: "GetAgentSettingsPath", Response: "AgentSettings", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "SetAgentRole", Method: MethodPut, Route: APIPrefix + "/projects/{projectID}/agent-settings/roles/{role}", Path: "SetAgentRolePath", Request: "SetAgentRoleRequest", SuccessStatus: http.StatusNoContent, Authenticated: true},
+		{Name: "ListAgentRuns", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/agent-runs", Path: "ListAgentRunsPath", Response: "ListAgentRunsResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "GetAgentRun", Method: MethodGet, Route: APIPrefix + "/agent-runs/{runID}", Path: "GetAgentRunPath", Response: "AgentRun", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "RunOutput", Method: MethodGet, Route: APIPrefix + "/agent-runs/{runID}/output", Path: "RunOutputPath", Query: "RunOutputQuery", Response: "RunOutputPage", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "AgentActivity", Method: MethodGet, Route: APIPrefix + "/agent-runs/activity", Query: "AgentActivityQuery", Response: "AgentActivityResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "CancelAgentRun", Method: MethodPost, Route: APIPrefix + "/agent-runs/{runID}/cancel", Path: "CancelAgentRunPath", Response: "CancelAgentRunResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "ListSandboxes", Method: MethodGet, Route: APIPrefix + "/projects/{projectID}/sandboxes", Path: "ListSandboxesPath", Response: "ListSandboxesResponse", SuccessStatus: http.StatusOK, Authenticated: true},
+		{Name: "ReconcileSandboxes", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/maintenance/reconcile", Path: "ProjectPath", Unavailable: true, Authenticated: true},
+		{Name: "PurgeFinishedWork", Method: MethodPost, Route: APIPrefix + "/projects/{projectID}/maintenance/purge", Path: "ProjectPath", Unavailable: true, Authenticated: true},
+	}
+	if !reflect.DeepEqual(Contract, want) {
+		t.Fatalf("contract differs from reviewed Go Merge inventory:\n got: %#v\nwant: %#v", Contract, want)
+	}
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+10 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+10)
-	}
-	if Contract[ClientOperationCount-1].Name != "RunOutput" {
-		t.Fatalf("last client operation = %q, want RunOutput", Contract[ClientOperationCount-1].Name)
-	}
-	if Contract[ClientOperationCount].Name != "Capabilities" || !Contract[ClientOperationCount].Authenticated {
-		t.Fatal("authenticated capabilities must follow the client operation inventory")
-	}
-	if Contract[ClientOperationCount+1].Name != "AddRepository" || !Contract[ClientOperationCount+1].Authenticated {
-		t.Fatal("daemon mutation operations should remain authenticated")
-	}
-	if Contract[len(Contract)-1].Name != "ReadDaemonLog" || !Contract[len(Contract)-1].Authenticated {
-		t.Fatal("daemon log must be the authenticated final operation")
+}
+
+func TestContractOperationsReturnsCopy(t *testing.T) {
+	operations := ContractOperations()
+	operations[0].Name = "changed"
+	if Contract[0].Name == "changed" {
+		t.Fatal("ContractOperations returned the contract backing array")
 	}
 }
 
-func TestOperationValidationAllowsNoContentRows(t *testing.T) {
-	if err := validateOperation(Operation{
-		Name: "Close", Method: MethodDelete, Route: APIPrefix + "/items/{item}", SuccessStatus: 204,
-	}); err != nil {
+func TestOperationValidation(t *testing.T) {
+	valid := Operation{Name: "Close", Method: MethodDelete, Route: APIPrefix + "/items/{item}", SuccessStatus: http.StatusNoContent}
+	if err := validateOperation(valid); err != nil {
 		t.Fatal(err)
 	}
-	for _, status := range []int{0, 199, 300, 500} {
-		t.Run(fmt.Sprintf("status-%d", status), func(t *testing.T) {
-			err := validateOperation(Operation{
-				Name: "Close", Method: MethodDelete, Route: APIPrefix + "/items/{item}", SuccessStatus: status,
-			})
-			if err == nil {
-				t.Fatalf("validateOperation accepted status %d", status)
-			}
-		})
-	}
-
-	if err := validateOperation(Operation{Name: "MissingResponse", Method: MethodGet, Route: APIPrefix + "/items", SuccessStatus: 200}); err != nil {
-		t.Fatalf("empty response rejected: %v", err)
+	if err := validateOperation(Operation{Name: "Unavailable", Method: MethodPost, Route: APIPrefix + "/items", Unavailable: true}); err != nil {
+		t.Fatal(err)
 	}
 	for _, operation := range []Operation{
-		{Method: MethodGet, Route: APIPrefix + "/items", SuccessStatus: 200},
-		{Name: "MissingMethod", Route: APIPrefix + "/items", SuccessStatus: 200},
-		{Name: "MissingRoute", Method: MethodGet, SuccessStatus: 200},
+		{Method: MethodGet, Route: APIPrefix + "/items", SuccessStatus: http.StatusOK},
+		{Name: "MissingMethod", Route: APIPrefix + "/items", SuccessStatus: http.StatusOK},
+		{Name: "MissingRoute", Method: MethodGet, SuccessStatus: http.StatusOK},
+		{Name: "BadStatus", Method: MethodGet, Route: APIPrefix + "/items", SuccessStatus: http.StatusMultipleChoices},
+		{Name: "UnavailableStatus", Method: MethodGet, Route: APIPrefix + "/items", Unavailable: true, SuccessStatus: http.StatusOK},
 	} {
 		if err := validateOperation(operation); err == nil {
-			t.Fatalf("incomplete operation accepted: %#v", operation)
+			t.Fatalf("validateOperation accepted %#v", operation)
 		}
 	}
 }
@@ -120,190 +155,77 @@ func contractFixtureJSON(fixture any) ([]byte, error) {
 	return json.Marshal(fixture)
 }
 
-func contractObjectFixture(value any, field, object string) contractFixture {
-	return contractFixture{value: value, json: `{"` + field + `":` + object + `}`}
-}
-
-func contractListFixture(value any, field, object string) contractFixture {
-	return contractFixture{value: value, json: `{"` + field + `":[` + object + `]}`}
-}
-
 const (
 	commentFixtureJSON      = `{"ID":"comment-1","Author":"reviewer","CreatedAt":"2026-08-19T12:01:00Z","Body":"Please review"}`
-	issueFixtureJSON        = `{"ID":"issue-1","Title":"First issue","ParentID":"parent-1","Repository":"origin","State":"Coding","CreatedAt":"2026-08-19T12:00:00Z","Body":"Implement it","Comments":[` + commentFixtureJSON + `],"BlockedBy":["issue-0"]}`
+	issueFixtureJSON        = `{"ID":"issue-1","Title":"First issue","ParentID":"parent-1","Repository":"origin","State":"Open","CreatedAt":"2026-08-19T12:00:00Z","Body":"Implement it","Comments":[` + commentFixtureJSON + `],"BlockedBy":["issue-0"]}`
 	pullRequestFixtureJSON  = `{"ID":"pr-1","IssueID":"issue-1","Title":"Implement issue","Status":"open","Repository":"origin","Number":7,"URL":"https://example.test/pr/7","Head":"feature/issue-1","Base":"main","Flags":["stale","human-needed"],"ReviewedHead":"abc123","ReviewedBase":"def456","Rounds":2,"Reviews":1,"RoundsGranted":1,"CodingRounds":2,"Approved":true,"CreatedAt":"2026-08-19T12:02:00Z","Comments":[` + commentFixtureJSON + `]}`
-	epicFixtureJSON         = `{"ID":"epic-1","Title":"First epic","Assignee":"alice","Repositories":["origin","secondary"],"Body":"Plan the release","State":"Review","BranchPrefix":"jira-123","Issues":[` + issueFixtureJSON + `],"PullRequests":[` + pullRequestFixtureJSON + `],"DraftingPasses":2}`
+	epicFixtureJSON         = `{"ID":"epic-1","Title":"First epic","Assignee":"alice","Repositories":["origin","secondary"],"Body":"Plan the release","State":"concept","BranchPrefix":"jira-123","Issues":[` + issueFixtureJSON + `],"PullRequests":[` + pullRequestFixtureJSON + `],"DraftingPasses":2}`
 	organisationFixtureJSON = `{"Name":"acme"}`
 	repositoryFixtureJSON   = `{"Name":"donsy","FullName":"acme/donsy","HTTPURL":"https://example.test/donsy","SSHURL":"git@example.test:acme/donsy.git","Organisation":"acme"}`
+	agentSubjectFixtureJSON = `{"Kind":"epic","ID":"epic-1"}`
+	agentRunFixtureJSON     = `{"ID":"run-1","ProjectID":7,"SandboxID":"sandbox-1","Role":"coding","Subject":` + agentSubjectFixtureJSON + `,"Engine":"opencode","Agent":"coder","Variant":"fast","SessionMode":"fresh","Status":"running","Round":2,"Error":"","Usage":{"TokensIn":12,"TokensOut":34,"CostUSD":0.25},"CreatedAt":"2026-08-19T12:00:00Z","StartedAt":"2026-08-19T12:01:00Z","FinishedAt":null}`
+	sandboxFixtureJSON      = `{"ID":"sandbox-1","ProjectID":7,"Name":"coding-epic-1","Role":"coding","Subject":` + agentSubjectFixtureJSON + `,"Status":"running","CreatedAt":"2026-08-19T11:59:00Z","UpdatedAt":"2026-08-19T12:01:00Z"}`
 )
 
 var (
-	contractComment = Comment{
-		ID: "comment-1", Author: "reviewer", CreatedAt: "2026-08-19T12:01:00Z", Body: "Please review",
-	}
-	contractIssue = Issue{
-		ID: "issue-1", Title: "First issue", ParentID: "parent-1", Repository: "origin", State: "Coding",
-		CreatedAt: "2026-08-19T12:00:00Z", Body: "Implement it", Comments: []Comment{contractComment}, BlockedBy: []string{"issue-0"},
-	}
-	contractPullRequest = PullRequest{
-		ID: "pr-1", IssueID: "issue-1", Title: "Implement issue", Status: "open", Repository: "origin", Number: 7,
-		URL: "https://example.test/pr/7", Head: "feature/issue-1", Base: "main", Flags: []string{"stale", "human-needed"},
-		ReviewedHead: "abc123", ReviewedBase: "def456", Rounds: 2, Reviews: 1, RoundsGranted: 1, CodingRounds: 2,
-		Approved: true, CreatedAt: "2026-08-19T12:02:00Z", Comments: []Comment{contractComment},
-	}
-	contractEpic = Epic{
-		ID: "epic-1", Title: "First epic", Assignee: "alice", Repositories: []string{"origin", "secondary"},
-		Body: "Plan the release", State: "Review", BranchPrefix: "jira-123", Issues: []Issue{contractIssue},
-		PullRequests: []PullRequest{contractPullRequest}, DraftingPasses: 2,
-	}
+	contractComment     = Comment{ID: "comment-1", Author: "reviewer", CreatedAt: "2026-08-19T12:01:00Z", Body: "Please review"}
+	contractIssue       = Issue{ID: "issue-1", Title: "First issue", ParentID: "parent-1", Repository: "origin", State: "Open", CreatedAt: "2026-08-19T12:00:00Z", Body: "Implement it", Comments: []Comment{contractComment}, BlockedBy: []string{"issue-0"}}
+	contractPullRequest = PullRequest{ID: "pr-1", IssueID: "issue-1", Title: "Implement issue", Status: "open", Repository: "origin", Number: 7, URL: "https://example.test/pr/7", Head: "feature/issue-1", Base: "main", Flags: []string{"stale", "human-needed"}, ReviewedHead: "abc123", ReviewedBase: "def456", Rounds: 2, Reviews: 1, RoundsGranted: 1, CodingRounds: 2, Approved: true, CreatedAt: "2026-08-19T12:02:00Z", Comments: []Comment{contractComment}}
+	contractEpic        = Epic{ID: "epic-1", Title: "First epic", Assignee: "alice", Repositories: []string{"origin", "secondary"}, Body: "Plan the release", State: "concept", BranchPrefix: "jira-123", Issues: []Issue{contractIssue}, PullRequests: []PullRequest{contractPullRequest}, DraftingPasses: 2}
 )
 
 var contractDTOs = map[string]any{
-	"ProcessResponse": contractFixture{
-		value: ProcessResponse{CurrentUser: "octocat", Protocol: ProtocolVersion},
-		json:  `{"currentUser":"octocat","protocol":"v1"}`,
-	},
-	"ListProjectsResponse": contractFixture{
-		value: ListProjectsResponse{{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}},
-		json:  `[{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"}]`,
-	},
-	"CreateProjectRequest":  CreateProjectRequest{Name: "demo"},
-	"CreateProjectResponse": contractFixture{value: CreateProjectResponse{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}, json: `{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"}`},
-	"ListProjectSummariesResponse": contractFixture{
-		value: ListProjectSummariesResponse{{Project: Project{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}, Epics: 2, Running: 1}},
-		json:  `[{"project":{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"},"epics":2,"running":1}]`,
-	},
-	"SetupState": contractFixture{
-		value: SetupState{Organisations: 1, Repositories: 2, RolesSet: 3, RolesTotal: 3},
-		json:  `{"Organisations":1,"Repositories":2,"RolesSet":3,"RolesTotal":3}`,
-	},
-	"InitialiseStoreRequest": InitialiseStoreRequest{
-		Model: "small", Variant: "fast", Repositories: []string{"acme/donsy", "acme/other"},
-	},
-	"ListEpicsRequest":        ListEpicsRequest{Project: "demo"},
-	"ListEpicsResponse":       contractListFixture(ListEpicsResponse{Epics: []Epic{contractEpic}}, "epics", epicFixtureJSON),
-	"GetEpicRequest":          GetEpicRequest{Project: "demo", Epic: "epic-1"},
-	"GetEpicResponse":         contractObjectFixture(GetEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"CreateEpicRequest":       CreateEpicRequest{Project: "demo", Title: "First epic", Description: "Plan the release"},
-	"CreateEpicResponse":      contractObjectFixture(CreateEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"PrefixEpicRequest":       PrefixEpicRequest{Project: "demo", Epic: "epic-1", Prefix: "EP-1"},
-	"PrefixEpicResponse":      contractObjectFixture(PrefixEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"TransitionEpicRequest":   TransitionEpicRequest{Project: "demo", Epic: "epic-1", Status: "in_progress"},
-	"TransitionEpicResponse":  contractObjectFixture(TransitionEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"CloseEpicRequest":        CloseEpicRequest{Project: "demo", Epic: "epic-1"},
-	"CloseEpicResponse":       contractObjectFixture(CloseEpicResponse{Epic: contractEpic}, "epic", epicFixtureJSON),
-	"ListIssuesRequest":       ListIssuesRequest{Project: "demo", Epic: "epic-1"},
-	"ListIssuesResponse":      contractListFixture(ListIssuesResponse{Issues: []Issue{contractIssue}}, "issues", issueFixtureJSON),
-	"GetIssueRequest":         GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"GetIssueResponse":        contractObjectFixture(GetIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"CreateIssueRequest":      CreateIssueRequest{Project: "demo", Epic: "epic-1", Title: "First issue", Description: "Implement it"},
-	"CreateIssueResponse":     contractObjectFixture(CreateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"UpdateIssueRequest":      UpdateIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Updated issue", Description: "Updated details"},
-	"UpdateIssueResponse":     contractObjectFixture(UpdateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"TransitionIssueRequest":  TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
-	"TransitionIssueResponse": contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"CloseIssueRequest":       CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"CloseIssueResponse":      contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"CreatePullRequestRequest": contractFixture{
-		value: CreatePullRequestRequest{IssueID: "issue-1", Title: "Implement issue", Repository: "origin", Head: "feature/issue-1", Base: "main"},
-		json:  `{"issueId":"issue-1","title":"Implement issue","repository":"origin","head":"feature/issue-1","base":"main"}`,
-	},
-	"TransitionPullRequestRequest": contractFixture{value: TransitionPullRequestRequest{Status: "closed"}, json: `{"status":"closed"}`},
-	"MergePullRequestResponse":     contractFixture{value: MergePullRequestResponse{Outcome: MergeOutcomeMerged}, json: `{"outcome":"merged"}`},
-	"PullRequestDiffResponse":      contractFixture{value: PullRequestDiffResponse{Diff: "@@ -1 +1 @@\n-old\n+new\n"}, json: `{"diff":"@@ -1 +1 @@\n-old\n+new\n"}`},
-	"OpenPullRequestsResponse":     contractFixture{value: OpenPullRequestsResponse{Opened: 2}, json: `{"opened":2}`},
-	"AddCommentRequest":            AddCommentRequest{TargetID: "issue-1", Target: IssueCommentTarget, Body: "Please review"},
-	"ListOrganisationsResponse": contractFixture{
-		value: ListOrganisationsResponse{{Name: "acme"}},
-		json:  `[` + organisationFixtureJSON + `]`,
-	},
-	"AddOrganisationRequest": AddOrganisationRequest{Name: "acme"},
-	"DiscoverOrganisationsResponse": contractFixture{
-		value: DiscoverOrganisationsResponse{{Name: "acme"}},
-		json:  `[` + organisationFixtureJSON + `]`,
-	},
-	"ListRepositoriesResponse": contractFixture{
-		value: ListRepositoriesResponse{{Name: "donsy", FullName: "acme/donsy", HTTPURL: "https://example.test/donsy", SSHURL: "git@example.test:acme/donsy.git", Organisation: "acme"}},
-		json:  `[` + repositoryFixtureJSON + `]`,
-	},
-	"AddRepositoryRequest": AddRepositoryRequest{FullName: "acme/donsy"},
-	"Repository": contractFixture{
-		value: Repository{Name: "donsy", FullName: "acme/donsy", HTTPURL: "https://example.test/donsy", SSHURL: "git@example.test:acme/donsy.git", Organisation: "acme"},
-		json:  repositoryFixtureJSON,
-	},
-	"ListProjectRepositoriesResponse": contractFixture{
-		value: ListProjectRepositoriesResponse{"acme/donsy", "acme/other"},
-		json:  `["acme/donsy","acme/other"]`,
-	},
+	"ProcessResponse":                  contractFixture{value: ProcessResponse{CurrentUser: "octocat", Protocol: ProtocolVersion}, json: `{"currentUser":"octocat","protocol":"v1"}`},
+	"CapabilitiesResponse":             contractFixture{value: CapabilitiesResponse{"runEpicAgent": false, "readRunOutput": true}, json: `{"readRunOutput":true,"runEpicAgent":false}`},
+	"ListProjectsResponse":             contractFixture{value: ListProjectsResponse{{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}}, json: `[{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"}]`},
+	"CreateProjectRequest":             CreateProjectRequest{Name: "demo"},
+	"CreateProjectResponse":            contractFixture{value: CreateProjectResponse{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}, json: `{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"}`},
+	"ListProjectSummariesResponse":     contractFixture{value: ListProjectSummariesResponse{{Project: Project{ID: 7, Name: "demo", LastOpenedAt: "2026-08-19T12:00:00Z"}, Epics: 2, Running: 1}}, json: `[{"project":{"ID":7,"Name":"demo","LastOpenedAt":"2026-08-19T12:00:00Z"},"epics":2,"running":1}]`},
+	"SetupState":                       contractFixture{value: SetupState{Organisations: 1, Repositories: 2, RolesSet: 4, RolesTotal: 5}, json: `{"Organisations":1,"Repositories":2,"RolesSet":4,"RolesTotal":5}`},
+	"InitialiseStoreRequest":           InitialiseStoreRequest{Model: "small", Variant: "fast", Repositories: []string{"acme/donsy", "acme/other"}},
+	"ListEpicsResponse":                contractFixture{value: ListEpicsResponse{contractEpic}, json: `[` + epicFixtureJSON + `]`},
+	"Epic":                             contractFixture{value: contractEpic, json: epicFixtureJSON},
+	"CreateEpicRequest":                CreateEpicRequest{Title: "First epic", Assignee: "alice", Body: "Plan the release", Repositories: []string{"origin"}, BranchPrefix: "jira-123"},
+	"TransitionEpicStateRequest":       TransitionEpicStateRequest{State: "review", Force: true},
+	"SetBranchPrefixRequest":           SetBranchPrefixRequest{Prefix: "EP-1"},
+	"CompleteEpicResponse":             CompleteEpicResponse{Completed: true},
+	"CreateIssueRequest":               CreateIssueRequest{ParentID: "parent-1", Title: "First issue", Body: "Implement it", Repository: "origin"},
+	"CreatePullRequestRequest":         contractFixture{value: CreatePullRequestRequest{IssueID: "issue-1", Title: "Implement issue", Repository: "origin", Head: "feature/issue-1", Base: "main"}, json: `{"issueId":"issue-1","title":"Implement issue","repository":"origin","head":"feature/issue-1","base":"main"}`},
+	"TransitionPullRequestRequest":     contractFixture{value: TransitionPullRequestRequest{Status: "closed"}, json: `{"status":"closed"}`},
+	"MergePullRequestResponse":         contractFixture{value: MergePullRequestResponse{Outcome: MergeOutcomeMerged}, json: `{"outcome":"merged"}`},
+	"PullRequestDiffResponse":          contractFixture{value: PullRequestDiffResponse{Diff: "@@ -1 +1 @@\n-old\n+new\n"}, json: `{"diff":"@@ -1 +1 @@\n-old\n+new\n"}`},
+	"OpenPullRequestsResponse":         contractFixture{value: OpenPullRequestsResponse{Opened: 2}, json: `{"opened":2}`},
+	"AddCommentRequest":                AddCommentRequest{TargetID: "issue-1", Target: IssueCommentTarget, Body: "Please review"},
+	"ListOrganisationsResponse":        contractFixture{value: ListOrganisationsResponse{{Name: "acme"}}, json: `[` + organisationFixtureJSON + `]`},
+	"AddOrganisationRequest":           AddOrganisationRequest{Name: "acme"},
+	"DiscoverOrganisationsResponse":    contractFixture{value: DiscoverOrganisationsResponse{{Name: "acme"}}, json: `[` + organisationFixtureJSON + `]`},
+	"ListRepositoriesResponse":         contractFixture{value: ListRepositoriesResponse{{Name: "donsy", FullName: "acme/donsy", HTTPURL: "https://example.test/donsy", SSHURL: "git@example.test:acme/donsy.git", Organisation: "acme"}}, json: `[` + repositoryFixtureJSON + `]`},
+	"AddRepositoryRequest":             AddRepositoryRequest{FullName: "acme/donsy"},
+	"Repository":                       contractFixture{value: Repository{Name: "donsy", FullName: "acme/donsy", HTTPURL: "https://example.test/donsy", SSHURL: "git@example.test:acme/donsy.git", Organisation: "acme"}, json: repositoryFixtureJSON},
+	"ListProjectRepositoriesResponse":  contractFixture{value: ListProjectRepositoriesResponse{"acme/donsy", "acme/other"}, json: `["acme/donsy","acme/other"]`},
 	"UpdateProjectRepositoriesRequest": UpdateProjectRepositoriesRequest{Repositories: []string{"acme/donsy", "acme/other"}},
-	"GetAgentSettingsRequest":          GetAgentSettingsRequest{Project: "demo"},
-	"GetAgentSettingsResponse": GetAgentSettingsResponse{Settings: []AgentSettings{{
-		Agent: "coder", Variant: "fast", Values: map[string]string{"model": "small", "temperature": "0.2"},
-	}}},
-	"ListAgentRunsRequest": ListAgentRunsRequest{Project: "demo"},
-	"ListAgentRunsResponse": ListAgentRunsResponse{Runs: []AgentRun{{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "failed", SessionID: "session-1", Error: "agent exited", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
-	}}},
-	"ListSandboxesRequest": ListSandboxesRequest{},
-	"ListSandboxesResponse": ListSandboxesResponse{Sandboxes: []Sandbox{{
-		ID: "sandbox-1", Name: "demo-sandbox", Status: "ready", AgentRunID: "run-1",
-	}}},
-	"CancelAgentRunRequest": CancelAgentRunRequest{Run: "run-1"},
-	"CancelAgentRunResponse": CancelAgentRunResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "cancelled", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
-	}},
-	"AgentActivityRequest": AgentActivityRequest{Run: "run-1"},
-	"AgentActivityResponse": AgentActivityResponse{Activity: []AgentActivity{{
-		RunID: "run-1", Status: "working", Message: "Writing code", UpdatedAt: "2026-08-19T12:01:00Z",
-	}}},
-	"RunOutputRequest": RunOutputRequest{Run: "run-1", Offset: 128},
-	"RunOutputResponse": RunOutputResponse{Output: RunOutput{
-		RunID: "run-1", Output: "finished step\n", Done: true,
-	}},
-	"CapabilitiesResponse": contractFixture{
-		value: CapabilitiesResponse{
-			"cancelAgentRun":        true,
-			"discoverOrganisations": true,
-			"listRepositories":      true,
-			"readRunOutput":         true,
-			"reconcileSandboxes":    true,
-			"resetIssue":            true,
-			"runEpicAgent":          true,
-			"runIssueAgent":         true,
-			"syncRepositories":      true,
-		},
-		json: `{"cancelAgentRun":true,"discoverOrganisations":true,"listRepositories":true,"readRunOutput":true,"reconcileSandboxes":true,"resetIssue":true,"runEpicAgent":true,"runIssueAgent":true,"syncRepositories":true}`,
-	},
-	"GetAgentRunRequest": GetAgentRunRequest{Run: "run-1"},
-	"GetAgentRunResponse": GetAgentRunResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "complete", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", FinishedAt: "2026-08-19T12:02:00Z", InputTokens: 12, OutputTokens: 34,
-	}},
-	"CompleteRequest":                CompleteRequest{Project: "demo", Run: "run-1"},
-	"CompleteResponse":               CompleteResponse{Complete: true},
-	"ReviewApprovedBranchesRequest":  ReviewApprovedBranchesRequest{Project: "demo"},
-	"ReviewApprovedBranchesResponse": ReviewApprovedBranchesResponse{Branches: []string{"main", "release"}},
-	"RunEpicRequest":                 RunEpicRequest{Project: "demo", Epic: "epic-1"},
-	"RunEpicResponse": RunEpicResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
-	}},
-	"RunIssueRequest": RunIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"RunIssueResponse": RunIssueResponse{Run: AgentRun{
-		ID: "run-1", Project: "demo", Agent: "coder", Variant: "fast", Status: "queued", SessionID: "session-1", StartedAt: "2026-08-19T12:00:00Z", InputTokens: 12, OutputTokens: 34,
-	}},
-	"ReconcileRequest":     ReconcileRequest{Project: "demo"},
-	"ReconcileResponse":    ReconcileResponse{Reconciled: 4},
-	"PurgeRequest":         PurgeRequest{Project: "demo"},
-	"PurgeResponse":        PurgeResponse{Purged: 2},
-	"ReadDaemonLogRequest": ReadDaemonLogRequest{Offset: 32, Limit: 4},
-	"ReadDaemonLogResponse": ReadDaemonLogResponse{
-		Lines: []string{"first", "second"}, NextOffset: 44, OffsetReset: true,
-	},
-	"ShapeBody": contractBodyFixture{Name: "new"},
+	"AgentSettings":                    contractFixture{value: AgentSettings{SetupScript: "setup.sh", Roles: map[string]AgentProfile{"coding": {Agent: "coder", Variant: "fast", MaxRounds: 3}}}, json: `{"SetupScript":"setup.sh","Roles":{"coding":{"Agent":"coder","Variant":"fast","MaxRounds":3}}}`},
+	"SetAgentRoleRequest":              SetAgentRoleRequest{Agent: "coder", Variant: "fast"},
+	"ListAgentRunsResponse":            contractFixture{value: ListAgentRunsResponse{contractAgentRun}, json: `[` + agentRunFixtureJSON + `]`},
+	"AgentRun":                         contractFixture{value: contractAgentRun, json: agentRunFixtureJSON},
+	"RunOutputPage":                    contractFixture{value: RunOutputPage{Entries: []TranscriptEntry{{Kind: 0, Tool: "", CallID: "", Text: "finished"}}, Next: 128}, json: `{"Entries":[{"Kind":0,"Tool":"","CallID":"","Text":"finished"}],"Next":128}`},
+	"AgentActivityResponse":            contractFixture{value: AgentActivityResponse{Sizes: map[string]int64{"run-1": 128}}, json: `{"sizes":{"run-1":128}}`},
+	"CancelAgentRunResponse":           contractFixture{value: CancelAgentRunResponse{Cancelled: true}, json: `{"cancelled":true}`},
+	"ListSandboxesResponse":            contractFixture{value: ListSandboxesResponse{contractSandbox}, json: `[` + sandboxFixtureJSON + `]`},
 }
 
+var contractAgentRun = AgentRun{ID: "run-1", ProjectID: 7, SandboxID: "sandbox-1", Role: "coding", Subject: AgentSubject{Kind: "epic", ID: "epic-1"}, Engine: "opencode", Agent: "coder", Variant: "fast", SessionMode: "fresh", Status: "running", Round: 2, Usage: RunUsage{TokensIn: 12, TokensOut: 34, CostUSD: 0.25}, CreatedAt: "2026-08-19T12:00:00Z", StartedAt: stringPointer("2026-08-19T12:01:00Z")}
+var contractSandbox = Sandbox{ID: "sandbox-1", ProjectID: 7, Name: "coding-epic-1", Role: "coding", Subject: AgentSubject{Kind: "epic", ID: "epic-1"}, Status: "running", CreatedAt: "2026-08-19T11:59:00Z", UpdatedAt: "2026-08-19T12:01:00Z"}
+
+func stringPointer(value string) *string { return &value }
+
 var contractPathDTOs = map[string]any{
-	"ShapePath":                     contractPathFixture{Project: "demo/blue"},
 	"ProjectPath":                   ProjectPath{ProjectID: 7},
+	"EpicPath":                      EpicPath{ProjectID: 7, EpicID: "epic-1"},
+	"IssuePath":                     IssuePath{ProjectID: 7, EpicID: "epic-1", IssueID: "issue-1"},
+	"CreateIssuePath":               EpicPath{ProjectID: 7, EpicID: "epic-1"},
+	"CloseIssuePath":                IssuePath{ProjectID: 7, EpicID: "epic-1", IssueID: "issue-1"},
+	"RunIssueAgentPath":             IssuePath{ProjectID: 7, EpicID: "epic-1", IssueID: "issue-1"},
 	"CreatePullRequestPath":         CreatePullRequestPath{ProjectID: 7, EpicID: "epic-1"},
 	"TransitionPullRequestPath":     TransitionPullRequestPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
 	"GrantCodingRoundPath":          GrantCodingRoundPath{ProjectID: 7, EpicID: "epic-1", PullRequestID: "pr-1"},
@@ -313,107 +235,21 @@ var contractPathDTOs = map[string]any{
 	"OpenPullRequestsPath":          OpenPullRequestsPath{ProjectID: 7, EpicID: "epic-1"},
 	"AddCommentPath":                AddCommentPath{ProjectID: 7, EpicID: "epic-1"},
 	"RemoveOrganisationPath":        RemoveOrganisationPath{Name: "acme/team"},
-	"ListProjectRepositoriesPath":   ListProjectRepositoriesPath{ProjectID: 7},
-	"UpdateProjectRepositoriesPath": UpdateProjectRepositoriesPath{ProjectID: 7},
+	"ListProjectRepositoriesPath":   ProjectPath{ProjectID: 7},
+	"UpdateProjectRepositoriesPath": ProjectPath{ProjectID: 7},
+	"SetAgentRolePath":              SetAgentRolePath{ProjectID: 7, Role: "coding"},
+	"GetAgentSettingsPath":          ProjectPath{ProjectID: 7},
+	"ListAgentRunsPath":             ProjectPath{ProjectID: 7},
+	"ListSandboxesPath":             ProjectPath{ProjectID: 7},
+	"AgentRunPath":                  AgentRunPath{RunID: "run-1"},
+	"GetAgentRunPath":               AgentRunPath{RunID: "run-1"},
+	"RunOutputPath":                 AgentRunPath{RunID: "run-1"},
+	"CancelAgentRunPath":            AgentRunPath{RunID: "run-1"},
 }
 
 var contractQueryDTOs = map[string]url.Values{
-	"ShapeQuery": {"runID": {"run-1", "run-2"}, "from": {"12"}},
-}
-
-func TestRepresentativeDTOJSON(t *testing.T) {
-	value := ReadDaemonLogResponse{Lines: []string{"first", "second"}, NextOffset: 24, OffsetReset: true}
-	encoded, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const want = `{"lines":["first","second"],"next_offset":24,"offset_reset":true}`
-	if string(encoded) != want {
-		t.Fatalf("ReadDaemonLogResponse JSON = %s, want %s", encoded, want)
-	}
-
-	request := CreateProjectRequest{Name: "demo"}
-	encoded, err = json.Marshal(request)
-	if err != nil {
-		t.Fatal(err)
-	}
-	const wantRequest = `{"name":"demo"}`
-	if string(encoded) != wantRequest {
-		t.Fatalf("CreateProjectRequest JSON = %s, want %s", encoded, wantRequest)
-	}
-}
-
-func TestBoundDaemonLogRequest(t *testing.T) {
-	bounded, err := BoundDaemonLogRequest(ReadDaemonLogRequest{Offset: 8, Limit: MaxDaemonLogLines + 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if bounded.Offset != 8 || bounded.Limit != MaxDaemonLogLines {
-		t.Fatalf("bounded request = %#v", bounded)
-	}
-
-	for _, test := range []struct {
-		name    string
-		request ReadDaemonLogRequest
-		want    error
-	}{
-		{name: "negative offset", request: ReadDaemonLogRequest{Offset: -1, Limit: 1}, want: ErrInvalidLogOffset},
-		{name: "zero limit", request: ReadDaemonLogRequest{Limit: 0}, want: ErrInvalidLogLimit},
-		{name: "negative limit", request: ReadDaemonLogRequest{Limit: -1}, want: ErrInvalidLogLimit},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			_, err := BoundDaemonLogRequest(test.request)
-			if !errors.Is(err, test.want) {
-				t.Fatalf("error = %v, want errors.Is(_, %v)", err, test.want)
-			}
-		})
-	}
-}
-
-func TestPageDaemonLog(t *testing.T) {
-	content := []byte("first\nsecond\nthird\npartial")
-
-	page, err := PageDaemonLog(content, ReadDaemonLogRequest{Limit: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(page.Lines, []string{"first", "second"}) || page.NextOffset != int64(len("first\nsecond\n")) {
-		t.Fatalf("first page = %#v", page)
-	}
-
-	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Offset: page.NextOffset, Limit: 2})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(page.Lines, []string{"third"}) || page.NextOffset != int64(len("first\nsecond\nthird\n")) {
-		t.Fatalf("second page = %#v", page)
-	}
-
-	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Offset: 999, Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !page.OffsetReset || page.NextOffset != int64(len("first\n")) {
-		t.Fatalf("reset page = %#v", page)
-	}
-
-	longLine := append(bytes.Repeat([]byte{'x'}, MaxDaemonLogBytes+1), '\n')
-	page, err = PageDaemonLog(longLine, ReadDaemonLogRequest{Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(page.Lines) != 0 || page.NextOffset != int64(len(longLine)) {
-		t.Fatalf("oversized line page = lines %d, next %d", len(page.Lines), page.NextOffset)
-	}
-
-	content = append(longLine, []byte("kept\n")...)
-	page, err = PageDaemonLog(content, ReadDaemonLogRequest{Limit: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !reflect.DeepEqual(page.Lines, []string{"kept"}) || page.NextOffset != int64(len(content)) {
-		t.Fatalf("page after oversized line = %#v", page)
-	}
+	"RunOutputQuery":     {"from": {"128"}},
+	"AgentActivityQuery": {"runID": {"run-1", "run-2"}},
 }
 
 func TestProtocolAndAPIError(t *testing.T) {
@@ -423,16 +259,8 @@ func TestProtocolAndAPIError(t *testing.T) {
 	if err := ValidateProtocol("v2"); !errors.Is(err, ErrInvalidProtocol) {
 		t.Fatalf("ValidateProtocol(v2) = %v", err)
 	}
-
-	apiError := &APIError{Code: ErrorUnauthorized, Detail: "bad token", StatusCode: 401}
-	if apiError.Error() != "bad token" {
-		t.Fatalf("APIError.Error() = %q", apiError.Error())
-	}
-	if !errors.Is(apiError, ErrUnauthorized) {
-		t.Fatal("APIError should unwrap its HTTP status error")
-	}
-	featureError := &APIError{Code: ErrorFeatureNotConfigured, Detail: "repository discovery is unavailable", StatusCode: 501}
-	if !errors.Is(featureError, ErrUnavailable) {
-		t.Fatal("feature_not_configured 501 should unwrap to ErrUnavailable")
+	apiError := &APIError{Code: ErrorUnauthorized, Detail: "bad token", StatusCode: http.StatusUnauthorized}
+	if apiError.Error() != "bad token" || !errors.Is(apiError, ErrUnauthorized) {
+		t.Fatal("APIError should expose its detail and status error")
 	}
 }
