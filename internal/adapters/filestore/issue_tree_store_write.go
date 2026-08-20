@@ -12,7 +12,10 @@ import (
 )
 
 func (s IssueTreeStore) Write(sandboxName string, epic epicpkg.Epic) (string, error) {
-	path := s.treePath(sandboxName, epic.ID)
+	path, err := s.treePath(sandboxName, epic.ID)
+	if err != nil {
+		return "", err
+	}
 	if err := os.MkdirAll(path, 0o755); err != nil {
 		return "", err
 	}

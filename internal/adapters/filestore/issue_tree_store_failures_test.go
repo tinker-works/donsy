@@ -40,6 +40,60 @@ func TestIssueTreeStore_Write_ShouldReportADirectoryItCannotCreate(t *testing.T)
 	}
 }
 
+func TestIssueTreeStore_Write_ShouldRejectPathLikeTreeComponents(t *testing.T) {
+	// Arrange: neither input may turn the tree path into a path outside Root.
+	root := filepath.Join(t.TempDir(), "store")
+	escapeBase := filepath.Base(root)
+	tests := []struct {
+		name        string
+		sandboxName string
+		epicID      string
+		escapePath  string
+	}{
+		{
+			name:        "sandbox name",
+			sandboxName: filepath.Join("..", "..", "..", escapeBase+"-sandbox-escape"),
+			epicID:      "epic",
+			escapePath:  filepath.Join(filepath.Dir(root), escapeBase+"-sandbox-escape"),
+		},
+		{
+			name:        "epic ID",
+			sandboxName: "gm-sandbox",
+			epicID:      filepath.Join("..", escapeBase+"-epic-escape"),
+			escapePath: filepath.Join(
+				filepath.Dir(root), escapeBase+"-epic-escape", "trees", "gm-sandbox",
+			),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if err := os.MkdirAll(test.escapePath, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			sentinel := filepath.Join(test.escapePath, "sentinel.md")
+			if err := os.WriteFile(sentinel, []byte("keep me"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			// Act
+			_, err := NewIssueTreeStore(root).Write(test.sandboxName, epic.Epic{
+				ID: test.epicID, Issues: []epic.Issue{{ID: "root"}},
+			})
+
+			// Assert
+			if err == nil {
+				t.Fatal("expected a path-like tree component to be rejected")
+			}
+			if contents, err := os.ReadFile(sentinel); err != nil {
+				t.Fatalf("expected the escaped tree to remain untouched: %v", err)
+			} else if string(contents) != "keep me" {
+				t.Fatalf("escaped tree was modified: %q", contents)
+			}
+		})
+	}
+}
+
 func TestIssueTreeStore_Write_ShouldRenderTheCommentThreadsBesideTheIssues(t *testing.T) {
 	// Arrange: the agent reads the discussion as part of the tree.
 	created := time.Date(2026, 8, 12, 9, 0, 0, 0, time.UTC)
