@@ -38,12 +38,19 @@ func TestCredentials_Discard_ShouldRemoveOnlyThatSandboxesCredentials(t *testing
 
 func TestCredentials_Discard_ShouldRejectANameThatEscapesTheRoot(t *testing.T) {
 	// Arrange
-	credentials := Credentials{root: filepath.Join(t.TempDir(), "credentials")}
+	root := t.TempDir()
+	credentials := Credentials{root: filepath.Join(root, "credentials")}
+	if err := os.MkdirAll(filepath.Join(credentials.root, "gm-1-live"), 0o700); err != nil {
+		t.Fatal(err)
+	}
 
 	// Act & Assert
-	for _, name := range []string{"", "../elsewhere", "nested/name"} {
+	for _, name := range []string{"", ".", "../elsewhere", "nested/name"} {
 		if err := credentials.Discard(name); err == nil {
 			t.Fatalf("expected %q to be rejected", name)
 		}
+	}
+	if _, err := os.Stat(filepath.Join(credentials.root, "gm-1-live")); err != nil {
+		t.Fatalf("expected the credentials root to remain untouched: %v", err)
 	}
 }

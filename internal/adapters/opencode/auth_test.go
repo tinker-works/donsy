@@ -55,6 +55,24 @@ func TestCredentials_OpenCodeMount_ShouldRejectANameThatEscapesTheRoot(t *testin
 	}
 }
 
+func TestCredentials_OpenCodeMount_ShouldRejectTheCurrentDirectory(t *testing.T) {
+	// Arrange
+	root := t.TempDir()
+	authPath := writeAuthFile(t, root, `{"anthropic":{"type":"api","key":"secret"}}`)
+	credentials := Credentials{root: filepath.Join(root, "guest"), authPath: authPath}
+
+	// Act
+	_, err := credentials.OpenCodeMount(".", testModel)
+
+	// Assert
+	if err == nil {
+		t.Fatal("expected the current directory to be rejected")
+	}
+	if _, err := os.Stat(credentials.root); !os.IsNotExist(err) {
+		t.Fatalf("expected the shared credentials root to remain untouched: %v", err)
+	}
+}
+
 func TestCredentials_OpenCodeMount_ShouldScopeMountPerSandbox(t *testing.T) {
 	// Arrange
 	root := t.TempDir()

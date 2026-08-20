@@ -231,7 +231,8 @@ func repositoryNameValid(repository string) bool {
 // segment of. IDs are ULIDs everywhere they are minted, so anything else is a
 // caller error, not a case to accommodate.
 func pathSegmentValid(id string) bool {
-	return id != "" && !strings.Contains(id, "/") && !strings.Contains(id, "..")
+	return id != "" && id != "." && !strings.Contains(id, "/") &&
+		!strings.Contains(id, "..")
 }
 
 var (

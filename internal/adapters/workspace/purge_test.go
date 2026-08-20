@@ -66,7 +66,7 @@ func TestPurge_ShouldRejectAnEpicIDThatEscapesTheRoot(t *testing.T) {
 	root := t.TempDir()
 
 	// Act & Assert
-	for _, id := range []string{"", "../elsewhere", "nested/id"} {
+	for _, id := range []string{"", ".", "../elsewhere", "nested/id"} {
 		if err := NewAgentWorkspace(root).Purge(id); err == nil {
 			t.Fatalf("expected workspace purge of %q to be rejected", id)
 		}

@@ -83,7 +83,8 @@ func (c Credentials) OpenCodeMount(sandboxName, model string) (agent_runtime.San
 }
 
 func validateSandboxName(sandboxName string) error {
-	if strings.ContainsAny(sandboxName, `/\`) || strings.Contains(sandboxName, "..") {
+	if sandboxName == "." || strings.ContainsAny(sandboxName, `/\`) ||
+		strings.Contains(sandboxName, "..") {
 		return fmt.Errorf("sandbox name %q is not a bare directory name", sandboxName)
 	}
 	return nil
