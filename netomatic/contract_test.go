@@ -13,8 +13,8 @@ func TestContractIsComplete(t *testing.T) {
 	if err := ValidateContract(); err != nil {
 		t.Fatal(err)
 	}
-	if len(Contract) != ClientOperationCount+8 {
-		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+8)
+	if len(Contract) != ClientOperationCount+9 {
+		t.Fatalf("contract rows = %d, want %d", len(Contract), ClientOperationCount+9)
 	}
 	if Contract[ClientOperationCount-1].Name != "ListSandboxes" {
 		t.Fatalf("last client operation = %q, want ListSandboxes", Contract[ClientOperationCount-1].Name)
@@ -211,22 +211,9 @@ var contractDTOs = map[string]any{
 	"TransitionEpicStateRequest": TransitionEpicStateRequest{State: "Review", Force: true},
 	"SetBranchPrefixRequest":     SetBranchPrefixRequest{Prefix: "EP-1"},
 	"CompleteEpicResponse":       CompleteEpicResponse{Completed: true},
-	"ListIssuesRequest":          ListIssuesRequest{Project: "demo", Epic: "epic-1"},
-	"ListIssuesResponse":         contractListFixture(ListIssuesResponse{Issues: []Issue{contractIssue}}, "issues", issueFixtureJSON),
-	"GetIssueRequest":            GetIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"GetIssueResponse":           contractObjectFixture(GetIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"CreateIssueRequest": CreateIssueRequest{
-		Project: "demo", Epic: "epic-1", Title: "First issue", Description: "Implement it",
+		ParentID: "parent-1", Title: "First issue", Body: "Implement it", Repository: "origin",
 	},
-	"CreateIssueResponse": contractObjectFixture(CreateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"UpdateIssueRequest": UpdateIssueRequest{
-		Project: "demo", Epic: "epic-1", Issue: "issue-1", Title: "Updated issue", Description: "Updated details",
-	},
-	"UpdateIssueResponse":      contractObjectFixture(UpdateIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"TransitionIssueRequest":   TransitionIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1", Status: "in_progress"},
-	"TransitionIssueResponse":  contractObjectFixture(TransitionIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
-	"CloseIssueRequest":        CloseIssueRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
-	"CloseIssueResponse":       contractObjectFixture(CloseIssueResponse{Issue: contractIssue}, "issue", issueFixtureJSON),
 	"ListPullRequestsRequest":  ListPullRequestsRequest{Project: "demo", Epic: "epic-1", Issue: "issue-1"},
 	"ListPullRequestsResponse": contractListFixture(ListPullRequestsResponse{PullRequests: []PullRequest{contractPullRequest}}, "pull_requests", pullRequestFixtureJSON),
 	"CreatePullRequestRequest": CreatePullRequestRequest{
@@ -335,6 +322,9 @@ var contractPathDTOs = map[string]any{
 	"RunOutputPath":        RunOutputPath{RunID: "run/1"},
 	"CancelAgentRunPath":   CancelAgentRunPath{RunID: "run/1"},
 	"ListSandboxesPath":    ListSandboxesPath{ProjectID: 7},
+	"CreateIssuePath":      CreateIssuePath{ProjectID: 42, EpicID: "epic-1"},
+	"CloseIssuePath":       CloseIssuePath{ProjectID: 42, EpicID: "epic-1", IssueID: "issue-1"},
+	"RunIssueAgentPath":    RunIssueAgentPath{ProjectID: 42, EpicID: "epic-1", IssueID: "issue-1"},
 }
 
 var contractQueryDTOs = map[string]url.Values{

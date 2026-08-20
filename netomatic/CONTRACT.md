@@ -28,12 +28,8 @@ means that the operation has no request body.
 | CompleteEpic | POST | `/api/v1/projects/{projectID}/epics/{epicID}/complete` | — | `CompleteEpicResponse` |
 | ReviewApprovedBranches | POST | `/api/v1/projects/{projectID}/epics/{epicID}/review-approved-branches` | — | — |
 | RunEpicAgent | POST | `/api/v1/projects/{projectID}/epics/{epicID}/agent-runs` | — | — |
-| ListIssues | GET | `/api/v1/projects/{project}/epics/{epic}/issues` | `ListIssuesRequest` | `ListIssuesResponse` |
-| GetIssue | GET | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}` | `GetIssueRequest` | `GetIssueResponse` |
-| CreateIssue | POST | `/api/v1/projects/{project}/epics/{epic}/issues` | `CreateIssueRequest` | `CreateIssueResponse` |
-| UpdateIssue | PUT | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}` | `UpdateIssueRequest` | `UpdateIssueResponse` |
-| TransitionIssue | POST | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}/transition` | `TransitionIssueRequest` | `TransitionIssueResponse` |
-| CloseIssue | POST | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}/close` | `CloseIssueRequest` | `CloseIssueResponse` |
+| CreateIssue | POST | `/api/v1/projects/{projectID}/epics/{epicID}/issues` | `CreateIssueRequest` | — |
+| CloseIssue | DELETE | `/api/v1/projects/{projectID}/epics/{epicID}/issues/{issueID}` | — | — |
 | ListPullRequests | GET | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}/pull-requests` | `ListPullRequestsRequest` | `ListPullRequestsResponse` |
 | CreatePullRequest | POST | `/api/v1/projects/{project}/epics/{epic}/issues/{issue}/pull-requests` | `CreatePullRequestRequest` | `CreatePullRequestResponse` |
 | CommentPullRequest | POST | `/api/v1/projects/{project}/pull-requests/{pull_request}/comments` | `CommentPullRequestRequest` | `CommentPullRequestResponse` |
@@ -56,12 +52,36 @@ means that the operation has no request body.
 | ListSandboxes | GET | `/api/v1/projects/{projectID}/sandboxes` | — | `ListSandboxesResponse` |
 | Capabilities | GET | `/api/v1/capabilities` | — | `CapabilitiesResponse` |
 | AddRepository | POST | `/api/v1/repositories` | `AddRepositoryRequest` | `AddRepositoryResponse` |
+| RunIssueAgent | POST | `/api/v1/projects/{projectID}/epics/{epicID}/issues/{issueID}/agent-runs` | — | — |
 | RunIssue | POST | `/api/v1/runs/issue` | `RunIssueRequest` | `RunIssueResponse` |
 | OpenPullRequests | GET | `/api/v1/open-pull-requests` | `OpenPullRequestsRequest` | `OpenPullRequestsResponse` |
 | TransitionPullRequest | POST | `/api/v1/pull-requests/{pull_request}/transition` | `TransitionPullRequestRequest` | `TransitionPullRequestResponse` |
 | ReconcileSandboxes | POST | `/api/v1/projects/{projectID}/maintenance/reconcile` | — | — |
 | PurgeFinishedWork | POST | `/api/v1/projects/{projectID}/maintenance/purge` | — | — |
 
+`CreateIssueRequest` contains `parentId`, `title`, `body`, and `repository`.
+`parentId` may be omitted to create the aggregate root, and `body` may be
+empty. Issue creation and closure return `204 No Content`. Manual issue-agent
+execution is registered but currently returns `501 Not Implemented` with the
+`feature_not_configured` error code.
+
+## Daemon Log
+
+`ReadDaemonLog` is authenticated and uses a byte offset into the daemon's
+newline-delimited log. The request `limit` must be positive. The daemon clamps
+it to `MaxDaemonLogLines` (1000) and also caps a page at `MaxDaemonLogBytes`
+(64 KiB). Pages contain complete lines only. If one line is larger than the
+byte cap, that complete line is skipped and the page offset advances past its
+newline. It is never split or returned, and subsequent lines can fill the same
+page.
+
+`next_offset` is always the byte offset immediately after the last newline
+consumed while building the page, including skipped oversized records; returned
+`lines` do not include that newline. A client should pass it unchanged to the
+next request. If the log was truncated or rotated and the requested offset is
+past the current file size, the daemon starts at byte zero and sets
+`offset_reset` to `true`. When no record is consumed, `next_offset` remains the
+effective starting offset, so polling at EOF is stable.
 `RunOutput` accepts an optional non-negative `from` query value. `AgentActivity`
 uses repeated `runID` query values and returns the `sizes` map directly. Both
 operations send an empty query when no values are supplied.
