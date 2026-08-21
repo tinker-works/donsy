@@ -5,10 +5,12 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"os"
 	"regexp"
 	"strconv"
@@ -31,6 +33,9 @@ type Server struct {
 	logger        *slog.Logger
 	handler       http.Handler
 	token         string
+	address       string
+	allowedHost   string
+	allowedOrigin string
 	daemonLogPath string
 	mutationMu    sync.Mutex
 }
@@ -47,7 +52,7 @@ func New(useCases *usecases.UseCases, logger *slog.Logger, tokens ...string) (*S
 	if logger == nil {
 		logger = slog.Default()
 	}
-	server := &Server{useCases: useCases, logger: logger, token: tokens[0]}
+	server := &Server{useCases: useCases, logger: logger, token: tokens[0], address: Address}
 	mux := http.NewServeMux()
 	server.registerRoutes(mux)
 	server.handler = server.middleware(mux)
@@ -66,12 +71,25 @@ func NewWithDaemonLog(useCases *usecases.UseCases, logger *slog.Logger, daemonLo
 
 func (s *Server) Handler() http.Handler { return s.handler }
 
+// ConfigureEndpoint makes Host and mutation Origin checks match the address the
+// daemon advertises. It must be called before requests are served.
+func (s *Server) ConfigureEndpoint(endpoint string) error {
+	parsed, err := url.Parse(endpoint)
+	if err != nil || parsed.Scheme != "http" || parsed.Host == "" {
+		return fmt.Errorf("invalid HTTP endpoint %q", endpoint)
+	}
+	s.allowedHost = parsed.Host
+	s.allowedOrigin = strings.TrimSuffix(parsed.String(), "/")
+	s.address = parsed.Host
+	return nil
+}
+
 func (s *Server) HTTPServer(baseContext context.Context) *http.Server {
 	if baseContext == nil {
 		baseContext = context.Background()
 	}
 	return &http.Server{
-		Addr:              Address,
+		Addr:              s.address,
 		Handler:           s.Handler(),
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       time.Minute,
@@ -139,13 +157,17 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 
 func (s *Server) middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if s.allowedHost != "" && !strings.EqualFold(r.Host, s.allowedHost) {
+			s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, "Host is not allowed")
+			return
+		}
 		if strings.HasPrefix(r.URL.Path, netomatic.APIPrefix+"/") && r.Header.Get("Authorization") != "Bearer "+s.token {
 			s.writeError(w, http.StatusUnauthorized, netomatic.ErrorUnauthorized, "a valid daemon token is required")
 			return
 		}
 		if r.Method != http.MethodGet && r.Method != http.MethodHead && r.Method != http.MethodOptions {
 			origin := r.Header.Get("Origin")
-			if origin != "" && origin != "http://127.0.0.1:8337" && origin != "http://localhost:8337" {
+			if origin != "" && !s.originAllowed(origin) {
 				s.writeError(w, http.StatusBadRequest, netomatic.ErrorInvalidRequest, "Origin is not allowed")
 				return
 			}
@@ -155,6 +177,13 @@ func (s *Server) middleware(next http.Handler) http.Handler {
 		r.Body = http.MaxBytesReader(w, r.Body, 1<<20)
 		next.ServeHTTP(w, r)
 	})
+}
+
+func (s *Server) originAllowed(origin string) bool {
+	if s.allowedOrigin != "" {
+		return origin == s.allowedOrigin
+	}
+	return origin == "http://127.0.0.1:8337" || origin == "http://localhost:8337"
 }
 
 func (s *Server) decode(r *http.Request, value any) error {

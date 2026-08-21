@@ -46,6 +46,37 @@ func TestHTTPServerReportsDocumentedUnavailableOperations(t *testing.T) {
 	}
 }
 
+func TestServerConfiguresHostAndOriginForAdvertisedEndpoint(t *testing.T) {
+	server, err := New(&usecases.UseCases{CurrentUser: "octocat"}, nil, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := server.ConfigureEndpoint("http://localhost:9123"); err != nil {
+		t.Fatal(err)
+	}
+	if got := server.HTTPServer(context.Background()).Addr; got != "localhost:9123" {
+		t.Fatalf("HTTP server address = %q, want %q", got, "localhost:9123")
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "http://localhost:9123/api/v1/projects", strings.NewReader(`{"name":"demo"}`))
+	request.Header.Set("Authorization", "Bearer token")
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Origin", "http://localhost:9123")
+	response := httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusNotImplemented {
+		t.Fatalf("allowed endpoint response = %d, want %d", response.Code, http.StatusNotImplemented)
+	}
+
+	request = httptest.NewRequest(http.MethodGet, "http://127.0.0.1:9123/api/v1/process", nil)
+	request.Header.Set("Authorization", "Bearer token")
+	response = httptest.NewRecorder()
+	server.Handler().ServeHTTP(response, request)
+	if response.Code != http.StatusBadRequest {
+		t.Fatalf("wrong Host response = %d, want %d", response.Code, http.StatusBadRequest)
+	}
+}
+
 func TestHTTPServerInteroperatesWithEveryContractOperation(t *testing.T) {
 	available := map[string]func(*netomatic.HTTPClient) error{
 		"Process":      func(c *netomatic.HTTPClient) error { _, err := c.Process(context.Background()); return err },
