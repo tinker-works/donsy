@@ -48,6 +48,11 @@ func parseEndpoint(value string) (endpoint, error) {
 	if err != nil || host == "" || portText == "" {
 		return endpoint{}, fmt.Errorf("HTTP endpoint must include an explicit numeric port")
 	}
+	for _, character := range portText {
+		if character < '0' || character > '9' {
+			return endpoint{}, fmt.Errorf("HTTP endpoint must include an explicit numeric port")
+		}
+	}
 	port, err := strconv.ParseUint(portText, 10, 16)
 	if err != nil {
 		return endpoint{}, fmt.Errorf("HTTP endpoint port must be from 0 through 65535")
@@ -259,11 +264,29 @@ func configuredToken(root, supplied string, suppliedSet bool) (string, error) {
 		return "", err
 	}
 	token = []byte(hex.EncodeToString(bytes))
-	if err := os.WriteFile(path, token, 0o600); err != nil {
-		return "", err
-	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if err := replacePrivateFile(path, token); err != nil {
 		return "", err
 	}
 	return string(token), nil
+}
+
+func replacePrivateFile(path string, contents []byte) error {
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-")
+	if err != nil {
+		return err
+	}
+	temporaryPath := file.Name()
+	defer func() { _ = os.Remove(temporaryPath) }()
+	if err := file.Chmod(0o600); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if _, err := file.Write(contents); err != nil {
+		_ = file.Close()
+		return err
+	}
+	if err := file.Close(); err != nil {
+		return err
+	}
+	return os.Rename(temporaryPath, path)
 }

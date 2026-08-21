@@ -36,7 +36,7 @@ func TestParseEndpoint(t *testing.T) {
 
 	for _, input := range []string{
 		"https://localhost:8337", "http://example.com:8337", "http://127.0.0.1",
-		"http://127.0.0.1:bad", "http://127.0.0.1:65536", "http://user@localhost:8337",
+		"http://127.0.0.1:bad", "http://127.0.0.1:+8337", "http://127.0.0.1:65536", "http://user@localhost:8337",
 		"http://localhost:8337/path", "http://localhost:8337?query", "http://localhost:8337?", "http://localhost:8337#fragment", "http://localhost:8337#",
 	} {
 		t.Run(input, func(t *testing.T) {
@@ -263,6 +263,9 @@ func TestConfiguredTokenRegeneratesOnlyEmptyDaemonToken(t *testing.T) {
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("token mode = %o, want 600", info.Mode().Perm())
+	}
+	if string(token) == "" {
+		t.Fatal("empty token was not replaced")
 	}
 	if got, err := configuredToken(root, "override", true); err != nil || got != "override" {
 		t.Fatalf("configuredToken(flag) = %q, %v", got, err)
