@@ -3,7 +3,6 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -13,7 +12,6 @@ import (
 	"strings"
 
 	"github.com/tinker-works/donsy/internal/adapters/instancelock"
-	"golang.org/x/sys/unix"
 )
 
 const (
@@ -160,7 +158,7 @@ func prepareRoot(configDir string) (string, *instancelock.Lock, error) {
 	}
 	if err := renameNoReplace(legacy, root); err != nil {
 		_ = lock.Release()
-		if errors.Is(err, unix.EEXIST) || errors.Is(err, unix.ENOTEMPTY) {
+		if os.IsExist(err) {
 			return "", nil, migrationCollisionError(legacy, root)
 		}
 		return "", nil, fmt.Errorf("migrate daemon root %q to %q: %w", legacy, root, err)
@@ -199,10 +197,6 @@ func migrationStagingError(staging string) error {
 
 func migrationCollisionError(legacy, root string) error {
 	return fmt.Errorf("both legacy root %q and donsy root %q exist; recover these paths before starting donsy", legacy, root)
-}
-
-func renameNoReplace(from, to string) error {
-	return unix.Renameat2(unix.AT_FDCWD, from, unix.AT_FDCWD, to, unix.RENAME_NOREPLACE)
 }
 
 func pathExists(path string) (bool, error) {
