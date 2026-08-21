@@ -12,6 +12,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -107,6 +108,55 @@ func TestRunDaemonPersistsEphemeralEndpointAndShutsDown(t *testing.T) {
 	}
 	assertDaemonRequest(t, endpoint, restartedToken, endpoint.String(), http.StatusNotImplemented)
 	daemon.stop(t)
+}
+
+func TestRunDaemonStartsMigratedProjectStoreAndStopsHosts(t *testing.T) {
+	configBase := t.TempDir()
+	t.Setenv("HOME", configBase)
+	t.Setenv("XDG_CONFIG_HOME", configBase)
+	stopped := filepath.Join(t.TempDir(), "stopped")
+	installDaemonToolsAndObserveHostShutdown(t, stopped)
+	configDir, err := os.UserConfigDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacy := filepath.Join(configDir, legacyRootName)
+	projectStore := filepath.Join(legacy, "stores", "projects", "Legacy project", "store.sqlite")
+	if err := os.MkdirAll(filepath.Dir(projectStore), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	copyLegacyFixture(t, "state.db", filepath.Join(legacy, "state.db"))
+	copyLegacyFixture(t, "store.sqlite", projectStore)
+	if err := os.WriteFile(filepath.Join(legacy, tokenFileName), []byte("legacy-token"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	root := filepath.Join(configDir, rootName)
+	endpoint, token, daemon := startDaemon(t, root, commandOptions{
+		endpoint:    "http://127.0.0.1:0",
+		endpointSet: true,
+	})
+	if token != "legacy-token" {
+		t.Fatalf("migrated token = %q, want legacy token", token)
+	}
+	assertDaemonRequest(t, endpoint, token, endpoint.String(), http.StatusNotImplemented)
+	daemon.stop(t)
+
+	contents, err := os.ReadFile(stopped)
+	if err != nil {
+		t.Fatalf("daemon did not stop migrated project host: %v", err)
+	}
+	if !strings.Contains(string(contents), "stop --profile gm-7") {
+		t.Fatalf("host shutdown = %q, want migrated project profile", contents)
+	}
+	store := projectstore.NewFactory(filepath.Join(root, "stores", "projects")).Open("Legacy project")
+	epics, err := store.ListEpics()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(epics) != 1 || epics[0].ID != "legacy-epic" {
+		t.Fatalf("migrated project store epics = %#v", epics)
+	}
 }
 
 func TestRunCommandStopsOnInterrupt(t *testing.T) {
@@ -280,6 +330,24 @@ func installDaemonTools(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
+	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
+}
+
+func installDaemonToolsAndObserveHostShutdown(t *testing.T, stopped string) {
+	t.Helper()
+	directory := t.TempDir()
+	scripts := map[string]string{
+		"colima":  "#!/bin/sh\ncase \"$1\" in\nlist) printf '%s\\n' '{\"name\":\"gm-7\",\"status\":\"Running\"}' ;;\nstop) printf '%s\\n' \"$*\" >> \"$DONSY_HOST_STOP_FILE\" ;;\nesac\n",
+		"docker":  "#!/bin/sh\nexit 0\n",
+		"gh":      "#!/bin/sh\nexit 1\n",
+		"limactl": "#!/bin/sh\nexit 1\n",
+	}
+	for name, script := range scripts {
+		if err := os.WriteFile(filepath.Join(directory, name), []byte(script), 0o700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("DONSY_HOST_STOP_FILE", stopped)
 	t.Setenv("PATH", directory+string(os.PathListSeparator)+os.Getenv("PATH"))
 }
 

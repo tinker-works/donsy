@@ -117,12 +117,13 @@ func TestPrepareRootMigratesLegacyRootAndRetainsLock(t *testing.T) {
 func TestPrepareRootMigratesReadableLegacyDataAndConnectionFiles(t *testing.T) {
 	configDir := t.TempDir()
 	legacy := filepath.Join(configDir, legacyRootName)
-	if err := os.MkdirAll(filepath.Join(legacy, "stores", "projects"), 0o700); err != nil {
+	projectStore := filepath.Join(legacy, "stores", "projects", "Legacy project", "store.sqlite")
+	if err := os.MkdirAll(filepath.Dir(projectStore), 0o700); err != nil {
 		t.Fatal(err)
 	}
 	copyLegacyFixture(t, "state.db", filepath.Join(legacy, "state.db"))
-	copyLegacyFixture(t, "store.sqlite", filepath.Join(legacy, "stores", "projects", "legacy.sqlite"))
-	for _, name := range []string{"state.db-wal", "state.db-shm", "stores/projects/legacy.sqlite-wal", "stores/projects/legacy.sqlite-shm"} {
+	copyLegacyFixture(t, "store.sqlite", projectStore)
+	for _, name := range []string{"state.db-wal", "state.db-shm", "stores/projects/Legacy project/store.sqlite-wal", "stores/projects/Legacy project/store.sqlite-shm"} {
 		if err := os.WriteFile(filepath.Join(legacy, name), []byte(name), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -139,7 +140,7 @@ func TestPrepareRootMigratesReadableLegacyDataAndConnectionFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = lock.Release() })
-	for _, name := range []string{"state.db-wal", "state.db-shm", "stores/projects/legacy.sqlite-wal", "stores/projects/legacy.sqlite-shm"} {
+	for _, name := range []string{"state.db-wal", "state.db-shm", "stores/projects/Legacy project/store.sqlite-wal", "stores/projects/Legacy project/store.sqlite-shm"} {
 		if _, err := os.Stat(filepath.Join(root, name)); err != nil {
 			t.Fatalf("migrated sidecar %q: %v", name, err)
 		}
@@ -167,19 +168,13 @@ func TestPrepareRootMigratesReadableLegacyDataAndConnectionFiles(t *testing.T) {
 	if len(projects) != 1 || projects[0].Name != "Legacy project" || len(sandboxes) != 1 || len(runs) != 2 {
 		t.Fatalf("migrated state is unreadable: projects=%#v sandboxes=%#v runs=%#v", projects, sandboxes, runs)
 	}
-	store, err := projectstore.OpenStore(filepath.Join(root, "stores", "projects", "legacy.sqlite"))
+	store := projectstore.NewFactory(filepath.Join(root, "stores", "projects")).Open("Legacy project")
+	epics, err := store.ListEpics()
 	if err != nil {
 		t.Fatal(err)
 	}
-	project, err := store.ReadProject()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := store.Close(); err != nil {
-		t.Fatal(err)
-	}
-	if project.Name != "Legacy project" {
-		t.Fatalf("migrated project store = %#v", project)
+	if len(epics) != 1 || epics[0].ID != "legacy-epic" {
+		t.Fatalf("migrated project store epics = %#v", epics)
 	}
 	if token, err := configuredToken(root, "", false); err != nil || token != "legacy-token" {
 		t.Fatalf("configuredToken() = %q, %v", token, err)
