@@ -290,7 +290,7 @@ func readDaemonToken(t *testing.T, root string) string {
 
 func assertDaemonRequest(t *testing.T, endpoint endpoint, token, origin string, wantStatus int) {
 	t.Helper()
-	request, err := http.NewRequest(http.MethodPost, endpoint.String()+"/api/v1/reconcile", nil)
+	request, err := http.NewRequest(http.MethodPost, endpoint.String()+"/api/v1/projects/1/maintenance/reconcile", nil)
 	if err != nil {
 		t.Fatal(err)
 	}
