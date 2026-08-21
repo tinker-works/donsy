@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/tinker-works/donsy/internal/domain"
 	"github.com/tinker-works/donsy/internal/domain/agent"
 	epicpkg "github.com/tinker-works/donsy/internal/domain/epic"
+	"github.com/tinker-works/donsy/internal/repositorypath"
 )
 
 type RunIssueAgentCommand struct {
@@ -223,6 +225,10 @@ func (u *RunIssueAgentUseCase) mount(
 		agent_runtime.SandboxMount{
 			HostLocation: repoPath, GuestLocation: "/work/repo", Writable: true,
 		},
+		agent_runtime.SandboxMount{
+			HostLocation:  filepath.Join(repoPath, ".git"),
+			GuestLocation: "/work/repo/.git",
+		},
 		agent_runtime.SandboxMount{HostLocation: repoPath, GuestLocation: repoPath},
 	)
 	for _, repository := range current.Repositories {
@@ -233,10 +239,14 @@ func (u *RunIssueAgentUseCase) mount(
 		if err != nil {
 			return err
 		}
-		spec.Mounts = append(spec.Mounts, agent_runtime.SandboxMount{
-			HostLocation:  path,
-			GuestLocation: "/work/repos/" + strings.ReplaceAll(repository, "/", "__"),
-		})
+		guestPath := "/work/repos/" + repositorypath.Encode(repository)
+		spec.Mounts = append(spec.Mounts,
+			agent_runtime.SandboxMount{HostLocation: path, GuestLocation: guestPath},
+			agent_runtime.SandboxMount{
+				HostLocation:  filepath.Join(path, ".git"),
+				GuestLocation: guestPath + "/.git",
+			},
+		)
 	}
 	return nil
 }
@@ -423,11 +433,11 @@ func issueContext(
 		if repository == pullRequest.Repository {
 			continue
 		}
-		references = append(references, strings.ReplaceAll(repository, "/", "__"))
+		references = append(references, repositorypath.Encode(repository))
 	}
 	return prompts.IssueContext{
 		IssuePath: fmt.Sprintf(
-			"/work/issues/%s/%s.md", strings.ReplaceAll(issue.Repository, "/", "__"), issue.ID,
+			"/work/issues/%s/%s.md", repositorypath.Encode(issue.Repository), issue.ID,
 		),
 		IssueTitle:   issue.Title,
 		RepoDir:      "/work/repo",

@@ -3,17 +3,18 @@ package usecases
 import (
 	"context"
 	"fmt"
-	"github.com/tinker-works/donsy/internal/application"
-	"github.com/tinker-works/donsy/internal/application/agent_runtime"
-	"github.com/tinker-works/donsy/internal/domain/agent"
-	"github.com/tinker-works/donsy/internal/domain/epic"
+	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/tinker-works/donsy/internal/application"
+	"github.com/tinker-works/donsy/internal/application/agent_runtime"
 	"github.com/tinker-works/donsy/internal/domain"
+	"github.com/tinker-works/donsy/internal/domain/agent"
+	"github.com/tinker-works/donsy/internal/domain/epic"
 )
 
 // fakeSandboxManager is reached by every dispatched round at once, so it is guarded
@@ -342,6 +343,19 @@ func TestRunEpicAgentUseCase_ShouldRefineThenReviewWithSeparateSandboxes(t *test
 	// continue here would attach the round to whatever session the sandbox last held.
 	if strings.Contains(strings.Join(runtime.argv, " "), "--continue") {
 		t.Fatalf("first refiner round continued a session that cannot exist: %#v", runtime.argv)
+	}
+	metadataFound := false
+	for _, mount := range sandboxes.ensured[0].Mounts {
+		if mount.GuestLocation != "/work/repos/acme__widgets/.git" {
+			continue
+		}
+		metadataFound = true
+		if mount.HostLocation != filepath.Join("/tmp/repositories/epic-1/acme/widgets", ".git") || mount.Writable {
+			t.Fatalf("expected the epic Git metadata mounted read-only, got %+v", mount)
+		}
+	}
+	if !metadataFound {
+		t.Fatal("expected the epic repository Git metadata to be mounted read-only")
 	}
 
 	runtime.output = "Independent review.\nVERDICT: approve"
