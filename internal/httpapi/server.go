@@ -27,12 +27,11 @@ const Address = "127.0.0.1:8337"
 var projectNamePattern = regexp.MustCompile(`^[A-Za-z0-9-]+$`)
 
 type Server struct {
-	useCases      *usecases.UseCases
-	logger        *slog.Logger
-	handler       http.Handler
-	token         string
-	daemonLogPath string
-	mutationMu    sync.Mutex
+	useCases   *usecases.UseCases
+	logger     *slog.Logger
+	handler    http.Handler
+	token      string
+	mutationMu sync.Mutex
 }
 
 // New creates a loopback API server that requires a bearer token for every API
@@ -51,16 +50,6 @@ func New(useCases *usecases.UseCases, logger *slog.Logger, tokens ...string) (*S
 	mux := http.NewServeMux()
 	server.registerRoutes(mux)
 	server.handler = server.middleware(mux)
-	return server, nil
-}
-
-// NewWithDaemonLog creates a server that can serve bounded daemon-log pages.
-func NewWithDaemonLog(useCases *usecases.UseCases, logger *slog.Logger, daemonLogPath string, tokens ...string) (*Server, error) {
-	server, err := New(useCases, logger, tokens...)
-	if err != nil {
-		return nil, err
-	}
-	server.daemonLogPath = daemonLogPath
 	return server, nil
 }
 
@@ -92,18 +81,18 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /api/v1/projects/{projectID}", s.forgetProject)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/setup", s.storeSetup)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/setup", s.initialiseStore)
-	mux.HandleFunc("GET /api/v1/projects/{project}/epics", s.listEpics)
-	mux.HandleFunc("POST /api/v1/projects/{project}/epics", s.createEpic)
-	mux.HandleFunc("GET /api/v1/projects/{project}/epics/{epic}", s.getEpic)
-	mux.HandleFunc("POST /api/v1/projects/{project}/epics/{epic}/prefix", s.prefixEpic)
-	mux.HandleFunc("POST /api/v1/projects/{project}/epics/{epic}/transition", s.transitionEpic)
-	mux.HandleFunc("POST /api/v1/projects/{project}/epics/{epic}/close", s.closeEpic)
-	mux.HandleFunc("GET /api/v1/projects/{project}/epics/{epic}/issues", s.listIssues)
-	mux.HandleFunc("POST /api/v1/projects/{project}/epics/{epic}/issues", s.createIssue)
-	mux.HandleFunc("GET /api/v1/projects/{project}/epics/{epic}/issues/{issue}", s.getIssue)
-	mux.HandleFunc("PUT /api/v1/projects/{project}/epics/{epic}/issues/{issue}", s.unavailable("updating issues"))
-	mux.HandleFunc("POST /api/v1/projects/{project}/epics/{epic}/issues/{issue}/transition", s.unavailable("transitioning issues"))
-	mux.HandleFunc("POST /api/v1/projects/{project}/epics/{epic}/issues/{issue}/close", s.closeIssue)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/epics", s.listEpics)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/epics/{epicID}", s.getEpic)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics", s.createEpic)
+	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/epics/{epicID}", s.closeEpic)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/state-transitions", s.transitionEpicState)
+	mux.HandleFunc("PUT /api/v1/projects/{projectID}/epics/{epicID}/branch-prefix", s.setBranchPrefix)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/complete", s.completeEpic)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/review-approved-branches", s.reviewApprovedBranches)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/agent-runs", s.runEpic)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/issues", s.createIssue)
+	mux.HandleFunc("DELETE /api/v1/projects/{projectID}/epics/{epicID}/issues/{issueID}", s.closeIssue)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/issues/{issueID}/agent-runs", s.runIssue)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/pull-requests", s.createPullRequest)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/state-transitions", s.transitionPullRequest)
 	mux.HandleFunc("POST /api/v1/projects/{projectID}/epics/{epicID}/pull-requests/{pullRequestID}/coding-rounds", s.grantCodingRound)
@@ -121,20 +110,16 @@ func (s *Server) registerRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /api/v1/repositories/sync", s.syncRepositories)
 	mux.HandleFunc("GET /api/v1/projects/{projectID}/repositories", s.listProjectRepositories)
 	mux.HandleFunc("PUT /api/v1/projects/{projectID}/repositories", s.updateProjectRepositories)
-	mux.HandleFunc("GET /api/v1/projects/{project}/agent-settings", s.getAgentSettings)
-	mux.HandleFunc("GET /api/v1/projects/{project}/agent-runs", s.listAgentRuns)
-	mux.HandleFunc("GET /api/v1/sandboxes", s.listSandboxes)
-	mux.HandleFunc("POST /api/v1/agent-runs/{run}/cancel", s.cancelAgentRun)
-	mux.HandleFunc("GET /api/v1/agent-runs/{run}/activity", s.agentActivity)
-	mux.HandleFunc("GET /api/v1/agent-runs/{run}/output", s.runOutput)
-	mux.HandleFunc("GET /api/v1/agent-runs/{run}", s.getAgentRun)
-	mux.HandleFunc("POST /api/v1/complete", s.completeEpic)
-	mux.HandleFunc("POST /api/v1/review-approved-branches", s.reviewApprovedBranches)
-	mux.HandleFunc("POST /api/v1/runs/epic", s.runEpic)
-	mux.HandleFunc("POST /api/v1/runs/issue", s.runIssue)
-	mux.HandleFunc("POST /api/v1/reconcile", s.unavailable("sandbox reconciliation"))
-	mux.HandleFunc("POST /api/v1/purge", s.unavailable("finished-work purge"))
-	mux.HandleFunc("GET /api/v1/daemon-log", s.readDaemonLog)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/agent-settings", s.getAgentSettings)
+	mux.HandleFunc("PUT /api/v1/projects/{projectID}/agent-settings/roles/{role}", s.setAgentRole)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/agent-runs", s.listAgentRuns)
+	mux.HandleFunc("GET /api/v1/agent-runs/{runID}", s.getAgentRun)
+	mux.HandleFunc("GET /api/v1/agent-runs/{runID}/output", s.runOutput)
+	mux.HandleFunc("GET /api/v1/agent-runs/activity", s.agentActivity)
+	mux.HandleFunc("POST /api/v1/agent-runs/{runID}/cancel", s.cancelAgentRun)
+	mux.HandleFunc("GET /api/v1/projects/{projectID}/sandboxes", s.listSandboxes)
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/maintenance/reconcile", s.unavailable("sandbox reconciliation requires the worker coordinator"))
+	mux.HandleFunc("POST /api/v1/projects/{projectID}/maintenance/purge", s.unavailable("finished-work purge requires the worker coordinator"))
 }
 
 func (s *Server) middleware(next http.Handler) http.Handler {
@@ -178,17 +163,6 @@ func (s *Server) projectID(r *http.Request) (domain.Project, error) {
 		return domain.Project{}, errInvalidRequest("projectID must be a positive integer")
 	}
 	return s.findProject(func(project domain.Project) bool { return project.ID == uint(id) })
-}
-
-func (s *Server) projectName(r *http.Request) (domain.Project, error) {
-	return s.projectNameValue(r.PathValue("project"))
-}
-
-func (s *Server) projectNameValue(name string) (domain.Project, error) {
-	if !validProjectName(name) {
-		return domain.Project{}, errInvalidRequest("project name must contain only letters, numbers, and dashes")
-	}
-	return s.findProject(func(project domain.Project) bool { return project.Name == name })
 }
 
 func (s *Server) findProject(match func(domain.Project) bool) (domain.Project, error) {

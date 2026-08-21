@@ -77,22 +77,29 @@ func epicResponse(epic epicpkg.Epic) netomatic.Epic {
 	}
 }
 
-func agentRunResponse(run agent.AgentRun, project string) netomatic.AgentRun {
-	response := netomatic.AgentRun{
-		ID: run.ID, Project: project, Agent: run.Agent, Variant: run.Variant, Status: string(run.Status),
-		Error: run.Error, InputTokens: int64(run.Usage.TokensIn), OutputTokens: int64(run.Usage.TokensOut),
-		StartedAt: timestampPointer(run.StartedAt), FinishedAt: timestampPointer(run.FinishedAt),
+func agentRunResponse(run agent.AgentRun) netomatic.AgentRun {
+	return netomatic.AgentRun{
+		ID: run.ID, ProjectID: run.ProjectID, SandboxID: run.SandboxID, Role: string(run.Role),
+		Subject: netomatic.AgentSubject{Kind: string(run.Subject.Kind), ID: run.Subject.ID}, Engine: string(run.Engine),
+		Agent: run.Agent, Variant: run.Variant, SessionMode: string(run.SessionMode), Status: string(run.Status),
+		Round: run.Round, Error: run.Error,
+		Usage:     netomatic.RunUsage{TokensIn: run.Usage.TokensIn, TokensOut: run.Usage.TokensOut, CostUSD: run.Usage.CostUSD},
+		CreatedAt: timestamp(run.CreatedAt), StartedAt: timestampPointer(run.StartedAt), FinishedAt: timestampPointer(run.FinishedAt),
 	}
-	return response
 }
 
 func sandboxResponse(sandbox agent.Sandbox) netomatic.Sandbox {
-	return netomatic.Sandbox{ID: sandbox.ID, Name: sandbox.Name, Status: string(sandbox.Status)}
+	return netomatic.Sandbox{
+		ID: sandbox.ID, ProjectID: sandbox.ProjectID, Name: sandbox.Name, Role: string(sandbox.Role),
+		Subject: netomatic.AgentSubject{Kind: string(sandbox.Subject.Kind), ID: sandbox.Subject.ID},
+		Status:  string(sandbox.Status), CreatedAt: timestamp(sandbox.CreatedAt), UpdatedAt: timestamp(sandbox.UpdatedAt),
+	}
 }
 
-func timestampPointer(value *time.Time) string {
+func timestampPointer(value *time.Time) *string {
 	if value == nil {
-		return ""
+		return nil
 	}
-	return timestamp(*value)
+	result := timestamp(*value)
+	return &result
 }
