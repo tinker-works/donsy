@@ -23,19 +23,22 @@ type CreateEpicUseCase struct {
 	factory application.WorkspaceFactory
 }
 
-func (u *CreateEpicUseCase) Handle(command CreateEpicCommand) error {
+func (u *CreateEpicUseCase) Handle(command CreateEpicCommand) (epicpkg.Epic, error) {
 	aggregate, err := epicpkg.CreateEpic(command.Title, command.Assignee, command.Body)
 	if err != nil {
-		return err
+		return epicpkg.Epic{}, err
 	}
 	if err := aggregate.SetBranchPrefix(command.BranchPrefix); err != nil {
-		return err
+		return epicpkg.Epic{}, err
 	}
 	workspace := u.factory.Open(command.Project.Name)
 	repositories, err := resolveEpicRepositories(workspace, command.Repositories)
 	if err != nil {
-		return err
+		return epicpkg.Epic{}, err
 	}
 	aggregate.Repositories = repositories
-	return workspace.CreateEpic(aggregate)
+	if err := workspace.CreateEpic(aggregate); err != nil {
+		return epicpkg.Epic{}, err
+	}
+	return aggregate, nil
 }

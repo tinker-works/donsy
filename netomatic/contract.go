@@ -296,6 +296,30 @@ type RunOutputPage struct {
 	Next    int64
 }
 
+// AgentActivity describes one run's current activity when used by the daemon
+// implementation. The public contract exposes aggregate sizes instead.
+type AgentActivity struct {
+	RunID     string `json:"run_id,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Message   string `json:"message,omitempty"`
+	UpdatedAt string `json:"updated_at,omitempty"`
+	// Size is the current transcript size in bytes. Activity pages are compact:
+	// consumers must use this value rather than treating item count as a size.
+	Size int64 `json:"size,omitempty"`
+}
+
+type RunOutput struct {
+	RunID string `json:"run_id"`
+	// Output contains the complete raw transcript records consumed by this page.
+	// Its byte length is Next minus the requested offset for ordinary append-only
+	// transcript reads, so length-based clients remain compatible.
+	Output string `json:"output"`
+	// Next is the byte offset to use for the next output poll. It cannot be
+	// derived from Output because transcript parsing can change its length.
+	Next int64 `json:"next"`
+	Done bool  `json:"done"`
+}
+
 type ProjectPath struct {
 	ProjectID uint
 }

@@ -48,7 +48,7 @@ func TestReadRunOutputUseCase_ShouldDecodeTheTranscript(t *testing.T) {
 	// Arrange
 	output := &fakeRunOutput{
 		pages: map[int64][]string{0: {"hello"}},
-		next:  map[int64]int64{0: 42},
+		next:  map[int64]int64{0: 6},
 	}
 	useCase := &ReadRunOutputUseCase{output: output, builder: fakeCommandBuilder{}}
 
@@ -62,7 +62,10 @@ func TestReadRunOutputUseCase_ShouldDecodeTheTranscript(t *testing.T) {
 	if len(page.Entries) != 1 || page.Entries[0].Text != "hello" {
 		t.Fatalf("unexpected entries: %+v", page.Entries)
 	}
-	if page.Next != 42 {
+	if page.Output != "hello\n" {
+		t.Fatalf("output = %q, want complete transcript line", page.Output)
+	}
+	if page.Next != 6 {
 		t.Fatalf("expected the resume offset, got %d", page.Next)
 	}
 }
@@ -71,7 +74,7 @@ func TestReadRunOutputUseCase_ShouldResumeFromTheGivenOffset(t *testing.T) {
 	// Arrange: polling for live output reads only what is new.
 	output := &fakeRunOutput{
 		pages: map[int64][]string{42: {"more"}},
-		next:  map[int64]int64{42: 60},
+		next:  map[int64]int64{42: 47},
 	}
 	useCase := &ReadRunOutputUseCase{output: output, builder: fakeCommandBuilder{}}
 
@@ -85,7 +88,7 @@ func TestReadRunOutputUseCase_ShouldResumeFromTheGivenOffset(t *testing.T) {
 	if len(output.asked) != 1 || output.asked[0] != 42 {
 		t.Fatalf("expected a read from 42, got %v", output.asked)
 	}
-	if page.Next != 60 {
+	if page.Next != 47 {
 		t.Fatalf("expected offset 60, got %d", page.Next)
 	}
 }

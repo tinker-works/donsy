@@ -344,3 +344,24 @@ func TestHTTPClientErrorsAndResponseLimit(t *testing.T) {
 		}
 	})
 }
+
+func TestHTTPClientSendsRunOutputOffsetAsQuery(t *testing.T) {
+	var query url.Values
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		query = r.URL.Query()
+		_, _ = io.WriteString(w, `{"Entries":[{"Kind":0,"Tool":"","CallID":"","Text":"next"}],"Next":256}`)
+	}))
+	defer server.Close()
+
+	client, err := NewHTTPClient(server.URL, "token")
+	if err != nil {
+		t.Fatal(err)
+	}
+	response, err := client.RunOutput(context.Background(), RunOutputPath{RunID: "run-1"}, url.Values{"from": {"128"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(query, url.Values{"from": {"128"}}) || len(response.Entries) != 1 || response.Entries[0].Text != "next" || response.Next != 256 {
+		t.Fatalf("query = %v, response = %#v", query, response)
+	}
+}

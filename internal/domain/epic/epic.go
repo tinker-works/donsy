@@ -1,11 +1,14 @@
 package epic
 
 import (
+	"errors"
 	"fmt"
 	"github.com/tinker-works/donsy/internal/domain"
 	"sort"
 	"strings"
 )
+
+var ErrIssueNotFound = errors.New("issue not found")
 
 type Epic struct {
 	ID           string
@@ -268,7 +271,7 @@ func (e *Epic) FindIssue(issueID string) (Issue, error) {
 		}
 	}
 
-	return Issue{}, fmt.Errorf("issue not found")
+	return Issue{}, ErrIssueNotFound
 }
 
 func (e *Epic) AddPullRequest(issueID string, pullRequest PullRequest) error {

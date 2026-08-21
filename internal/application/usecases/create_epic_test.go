@@ -12,7 +12,7 @@ func TestCreateEpicUseCase_ShouldCreateEpicThroughWorkspacePort(t *testing.T) {
 	useCase := &CreateEpicUseCase{factory: &fakeFactory{workspace: workspace}}
 
 	// Act
-	err := useCase.Handle(CreateEpicCommand{
+	created, err := useCase.Handle(CreateEpicCommand{
 		Project:      domain.Project{Name: "one"},
 		Title:        "Epic",
 		Assignee:     "owner",
@@ -26,6 +26,9 @@ func TestCreateEpicUseCase_ShouldCreateEpicThroughWorkspacePort(t *testing.T) {
 	}
 	if workspace.createdEpic == nil {
 		t.Fatalf("unexpected create call: %#v", workspace)
+	}
+	if created.ID == "" || created.ID != workspace.createdEpic.ID {
+		t.Fatalf("returned epic = %#v, stored epic = %#v", created, workspace.createdEpic)
 	}
 	if workspace.createdEpic.Title != "Epic" || workspace.createdEpic.Assignee != "owner" ||
 		workspace.createdEpic.Body != "Details" ||
@@ -42,7 +45,7 @@ func TestCreateEpicUseCase_ShouldScopeToEveryProjectRepositoryWhenNoneRequested(
 	useCase := &CreateEpicUseCase{factory: &fakeFactory{workspace: workspace}}
 
 	// Act
-	err := useCase.Handle(CreateEpicCommand{
+	_, err := useCase.Handle(CreateEpicCommand{
 		Project: domain.Project{Name: "one"},
 		Title:   "Epic", Assignee: "owner",
 	})
@@ -62,7 +65,7 @@ func TestCreateEpicUseCase_ShouldRejectWhenTheProjectHasNoRepositories(t *testin
 	useCase := &CreateEpicUseCase{factory: &fakeFactory{workspace: workspace}}
 
 	// Act
-	err := useCase.Handle(CreateEpicCommand{
+	_, err := useCase.Handle(CreateEpicCommand{
 		Project: domain.Project{Name: "one"},
 		Title:   "Epic", Assignee: "owner",
 	})
@@ -82,7 +85,7 @@ func TestCreateEpicUseCase_ShouldRejectARepositoryTheProjectDoesNotConfigure(t *
 	useCase := &CreateEpicUseCase{factory: &fakeFactory{workspace: workspace}}
 
 	// Act
-	err := useCase.Handle(CreateEpicCommand{
+	_, err := useCase.Handle(CreateEpicCommand{
 		Project:      domain.Project{Name: "one"},
 		Title:        "Epic",
 		Assignee:     "owner",
