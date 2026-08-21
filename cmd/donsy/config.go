@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net"
 	"net/url"
@@ -12,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/tinker-works/donsy/internal/adapters/instancelock"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -36,7 +38,8 @@ func parseEndpoint(value string) (endpoint, error) {
 	if !parsed.IsAbs() || parsed.Scheme != "http" {
 		return endpoint{}, fmt.Errorf("HTTP endpoint must be an absolute http URL")
 	}
-	if parsed.User != nil || parsed.RawQuery != "" || parsed.Fragment != "" ||
+	if parsed.User != nil || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" ||
+		parsed.RawFragment != "" || strings.Contains(value, "#") ||
 		(parsed.Path != "" && parsed.Path != "/") {
 		return endpoint{}, fmt.Errorf("HTTP endpoint must not contain user info, a query, fragment, or path")
 	}
@@ -97,40 +100,109 @@ func prepareRoot(configDir string) (string, *instancelock.Lock, error) {
 		return "", nil, err
 	}
 	if stagingExists {
-		return "", nil, fmt.Errorf("migration staging root %q exists; recover %q before starting donsy", staging, staging)
+		return "", nil, migrationStagingError(staging)
 	}
 	if legacyExists && rootExists {
-		return "", nil, fmt.Errorf("both legacy root %q and donsy root %q exist; recover these paths before starting donsy", legacy, root)
+		return "", nil, migrationCollisionError(legacy, root)
 	}
-	if legacyExists {
-		lock, err := instancelock.Acquire(filepath.Join(legacy, "go-merge.lock"))
+	if rootExists {
+		lock, err := acquireLock(root)
 		if err != nil {
 			return "", nil, err
 		}
-		if err := os.Chmod(filepath.Join(legacy, "go-merge.lock"), 0o600); err != nil {
+		legacyExists, stagingExists, err = migrationRootsExist(legacy, staging)
+		if err != nil {
 			_ = lock.Release()
 			return "", nil, err
 		}
-		if err := os.Rename(legacy, root); err != nil {
+		if stagingExists {
 			_ = lock.Release()
-			return "", nil, fmt.Errorf("migrate daemon root %q to %q: %w", legacy, root, err)
+			return "", nil, migrationStagingError(staging)
+		}
+		if legacyExists {
+			_ = lock.Release()
+			return "", nil, migrationCollisionError(legacy, root)
 		}
 		return root, lock, nil
 	}
-	if !rootExists {
-		if err := os.MkdirAll(root, 0o700); err != nil {
+
+	// Claim the legacy lock even for a new installation. It closes the gap between
+	// deciding there is no legacy root and a legacy daemon creating one.
+	if !legacyExists {
+		if err := os.MkdirAll(configDir, 0o700); err != nil {
+			return "", nil, err
+		}
+		if err := os.Mkdir(legacy, 0o700); err != nil && !os.IsExist(err) {
 			return "", nil, err
 		}
 	}
-	lock, err := instancelock.Acquire(filepath.Join(root, "go-merge.lock"))
+	lock, err := acquireLock(legacy)
 	if err != nil {
 		return "", nil, err
 	}
-	if err := os.Chmod(filepath.Join(root, "go-merge.lock"), 0o600); err != nil {
+	rootExists, err = pathExists(root)
+	if err != nil {
 		_ = lock.Release()
 		return "", nil, err
 	}
+	stagingExists, err = pathExists(staging)
+	if err != nil {
+		_ = lock.Release()
+		return "", nil, err
+	}
+	if stagingExists {
+		_ = lock.Release()
+		return "", nil, migrationStagingError(staging)
+	}
+	if rootExists {
+		_ = lock.Release()
+		return "", nil, migrationCollisionError(legacy, root)
+	}
+	if err := renameNoReplace(legacy, root); err != nil {
+		_ = lock.Release()
+		if errors.Is(err, unix.EEXIST) || errors.Is(err, unix.ENOTEMPTY) {
+			return "", nil, migrationCollisionError(legacy, root)
+		}
+		return "", nil, fmt.Errorf("migrate daemon root %q to %q: %w", legacy, root, err)
+	}
 	return root, lock, nil
+}
+
+func acquireLock(root string) (*instancelock.Lock, error) {
+	path := filepath.Join(root, "go-merge.lock")
+	lock, err := instancelock.Acquire(path)
+	if err != nil {
+		return nil, err
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		_ = lock.Release()
+		return nil, err
+	}
+	return lock, nil
+}
+
+func migrationRootsExist(legacy, staging string) (bool, bool, error) {
+	legacyExists, err := pathExists(legacy)
+	if err != nil {
+		return false, false, err
+	}
+	stagingExists, err := pathExists(staging)
+	if err != nil {
+		return false, false, err
+	}
+	return legacyExists, stagingExists, nil
+}
+
+func migrationStagingError(staging string) error {
+	return fmt.Errorf("migration staging root %q exists; recover %q before starting donsy", staging, staging)
+}
+
+func migrationCollisionError(legacy, root string) error {
+	return fmt.Errorf("both legacy root %q and donsy root %q exist; recover these paths before starting donsy", legacy, root)
+}
+
+func renameNoReplace(from, to string) error {
+	return unix.Renameat2(unix.AT_FDCWD, from, unix.AT_FDCWD, to, unix.RENAME_NOREPLACE)
 }
 
 func pathExists(path string) (bool, error) {

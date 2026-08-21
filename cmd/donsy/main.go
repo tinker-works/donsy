@@ -237,14 +237,22 @@ func serve(
 		})
 	}()
 	serverDone := make(chan struct{})
+	serverErr := make(chan error, 1)
 	go func() {
 		defer close(serverDone)
 		if err := apiServer.Serve(listener); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("HTTP API stopped unexpectedly", "error", err)
+			serverErr <- fmt.Errorf("serve HTTP API: %w", err)
+			return
 		}
+		serverErr <- nil
 	}()
 
-	<-ctx.Done()
+	var serveErr error
+	select {
+	case <-ctx.Done():
+	case serveErr = <-serverErr:
+	}
 	stopAPI()
 	shutdownContext, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	if err := apiServer.Shutdown(shutdownContext); err != nil {
@@ -260,7 +268,7 @@ func serve(
 	case <-time.After(shutdownGrace):
 		logger.Warn("epic worker did not stop in time; the next launch will reconcile")
 	}
-	return nil
+	return serveErr
 }
 
 func shutdownHosts(projects application.ProjectRegistry, host agent_runtime.ProjectHost, logger *slog.Logger) {
